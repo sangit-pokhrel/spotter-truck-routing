@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { Place } from "../api/types";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
@@ -14,9 +14,11 @@ interface Props {
   placeholder: string;
   value: PlaceValue;
   onChange: (value: PlaceValue) => void;
+  /** Optional button shown inside the field (e.g. "use my location"). */
+  action?: ReactNode;
 }
 
-export function PlaceInput({ label, placeholder, value, onChange }: Props) {
+export function PlaceInput({ label, placeholder, value, onChange, action }: Props) {
   const id = useId();
   const [suggestions, setSuggestions] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
@@ -63,12 +65,14 @@ export function PlaceInput({ label, placeholder, value, onChange }: Props) {
   const showList = open && suggestions.length > 0 && !value.place;
 
   return (
-    <div className="field place-input">
+    <div className={`field place-input${action ? " has-action" : ""}`}>
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
         type="text"
         autoComplete="off"
+        autoCapitalize="words"
+        enterKeyHint="next"
         placeholder={placeholder}
         value={value.text}
         role="combobox"
@@ -84,7 +88,8 @@ export function PlaceInput({ label, placeholder, value, onChange }: Props) {
         onKeyDown={onKeyDown}
         required
       />
-      {value.place && <span className="place-check" aria-label="Location confirmed">✓</span>}
+      {value.place && !action && <span className="place-check" aria-label="Location confirmed">✓</span>}
+      {action && <div className="field-action">{action}</div>}
       {showList && (
         <ul className="suggestions" id={`${id}-list`} role="listbox">
           {suggestions.map((s, i) => (

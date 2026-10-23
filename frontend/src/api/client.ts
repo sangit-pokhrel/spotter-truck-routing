@@ -41,49 +41,67 @@ interface WeatherRequest {
 }
 
 const WEATHER_PARALLEL = 4;
-const WEATHER_RETRY_MS = 1500;
+/** Waits before each retry; Open-Meteo's free tier limits calls per minute per IP. */
+const WEATHER_RETRY_MS = [1500, 4000];
+
+interface WeatherItem {
+  hourly: Record<string, unknown>;
+  hourly_units: Record<string, string>;
+}
+
+/** Per-tab cache keyed by location + time window, so replans and the heatmap reuse forecasts. */
+const weatherCache = new Map<string, WeatherItem>();
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function fetchBatch(req: WeatherRequest, batch: [number, number][], signal?: AbortSignal): Promise<WeatherItem[]> {
+  const query = new URLSearchParams({
+    ...req.params,
+    latitude: batch.map(([lat]) => lat.toFixed(4)).join(","),
+    longitude: batch.map(([, lon]) => lon.toFixed(4)).join(","),
+  });
+  let reason: string | undefined;
+  for (let attempt = 0; attempt <= WEATHER_RETRY_MS.length; attempt++) {
+    if (attempt > 0) await sleep(WEATHER_RETRY_MS[attempt - 1]);
+    try {
+      const resp = await fetch(`${req.url}?${query}`, { signal });
+      const body = await resp.json().catch(() => null);
+      if (resp.ok && body) {
+        const items: { hourly: Record<string, unknown>; hourly_units?: Record<string, string> }[] = Array.isArray(body)
+          ? body
+          : [body];
+        // Only the series the server reads; `time` is implied by start_hour.
+        return items.map(({ hourly: { time: _time, ...hourly }, hourly_units }) => ({ hourly, hourly_units: hourly_units ?? {} }));
+      }
+      reason = body?.reason;
+    } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
+    }
+  }
+  throw new ApiError(reason ?? "Weather service is busy. Please try again in a minute.");
+}
 
 async function fetchWeather(req: WeatherRequest, signal?: AbortSignal) {
+  const keyOf = ([lat, lon]: [number, number]) => `${lat.toFixed(4)},${lon.toFixed(4)}|${req.params.start_hour}|${req.params.end_hour}`;
+  const missing = req.locations.filter((loc) => !weatherCache.has(keyOf(loc)));
+
   const batches: [number, number][][] = [];
-  for (let i = 0; i < req.locations.length; i += req.batch_size) batches.push(req.locations.slice(i, i + req.batch_size));
-
-  const fetchBatch = async (batch: [number, number][]) => {
-    const query = new URLSearchParams({
-      ...req.params,
-      latitude: batch.map(([lat]) => lat.toFixed(4)).join(","),
-      longitude: batch.map(([, lon]) => lon.toFixed(4)).join(","),
-    });
-    const attempt = async () => {
-      const resp = await fetch(`${req.url}?${query}`, { signal });
-      return { resp, body: await resp.json().catch(() => null) };
-    };
-    let { resp, body } = await attempt().catch((err) => {
-      if (err.name === "AbortError") throw err;
-      return { resp: null, body: null };
-    });
-    if (!resp?.ok || !body) {
-      // One retry after a short pause smooths over per-minute rate limits and network blips.
-      await new Promise((r) => setTimeout(r, WEATHER_RETRY_MS));
-      ({ resp, body } = await attempt());
-    }
-    if (!resp?.ok || !body) throw new ApiError(body?.reason ?? "Weather service is unavailable. Please try again.");
-    const items: { hourly: Record<string, unknown>; hourly_units?: Record<string, string> }[] = Array.isArray(body)
-      ? body
-      : [body];
-    // Only the series the server reads; `time` is implied by start_hour.
-    return items.map(({ hourly: { time: _time, ...hourly }, hourly_units }) => ({ hourly, hourly_units: hourly_units ?? {} }));
-  };
-
-  const results: Awaited<ReturnType<typeof fetchBatch>>[] = new Array(batches.length);
+  for (let i = 0; i < missing.length; i += req.batch_size) batches.push(missing.slice(i, i + req.batch_size));
   let next = 0;
   const worker = async () => {
     while (next < batches.length) {
-      const i = next++;
-      results[i] = await fetchBatch(batches[i]);
+      const batch = batches[next++];
+      const items = await fetchBatch(req, batch, signal);
+      batch.forEach((loc, i) => weatherCache.set(keyOf(loc), items[i]));
     }
   };
   await Promise.all(Array.from({ length: Math.min(WEATHER_PARALLEL, batches.length) }, worker));
-  return { start_hour: req.params.start_hour, locations: req.locations, items: results.flat() };
+
+  return {
+    start_hour: req.params.start_hour,
+    locations: req.locations,
+    items: req.locations.map((loc) => weatherCache.get(keyOf(loc))!),
+  };
 }
 
 async function postWithWeather<T>(path: string, body: object, signal?: AbortSignal): Promise<T> {

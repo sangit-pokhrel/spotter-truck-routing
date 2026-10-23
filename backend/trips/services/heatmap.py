@@ -17,7 +17,7 @@ from .risk import assess
 from .weather import resolve_forecasts, snap
 
 CORRIDOR_HALF_WIDTH_MI = 40.0
-MAX_CELLS = 450
+MAX_CELLS = 300  # each cell is one forecast location; keeps a trip well under per-minute quotas
 MIN_SPACING_MI = 8.0
 MILES_PER_DEG_LAT = 69.0
 

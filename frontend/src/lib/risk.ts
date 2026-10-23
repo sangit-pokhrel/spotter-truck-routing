@@ -13,13 +13,16 @@ export const RISK_LABEL: Record<RiskKey, string> = {
 
 /** Ordered low → no travel; heatmap ramps are built from these same colours. */
 export const RISK_COLOR: Record<RiskKey, string> = {
-  low: "#2f9e5b",
-  moderate: "#e3b505",
-  high: "#f07b1f",
-  severe: "#d7382d",
-  no_travel: "#7a2bb8",
-  unknown: "#9aa3ad",
+  low: "#3a9a5c",
+  moderate: "#d9a300",
+  high: "#e8730c",
+  severe: "#cc3329",
+  no_travel: "#6e2fa8",
+  unknown: "#9aa1aa",
 };
+
+/** Identity colours for Route A/B/C (distinct from every risk colour). */
+export const ROUTE_COLORS: Record<string, string> = { A: "#1f5fd6", B: "#0b8793", C: "#b13d94" };
 
 type RGB = [number, number, number];
 

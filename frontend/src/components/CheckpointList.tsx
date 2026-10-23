@@ -6,34 +6,48 @@ import { RiskBadge } from "./RiskBadge";
 interface Props {
   checkpoints: Checkpoint[];
   onFocus: (cp: Checkpoint) => void;
+  onHover: (mile: number | null) => void;
 }
 
-function weatherText(cp: Checkpoint): string {
-  if (cp.wind_mph === null) return "—";
-  const parts = [`${Math.round(cp.wind_mph)} mph`];
-  if ((cp.rain_in_hr ?? 0) > 0) parts.push(`${cp.rain_in_hr!.toFixed(2)}″ rain`);
-  if ((cp.snow_in_hr ?? 0) > 0) parts.push(`${cp.snow_in_hr!.toFixed(2)}″ snow`);
-  return parts.join(" · ");
+function num(v: number | null, digits: number): string {
+  return v === null ? "–" : v.toFixed(digits);
 }
 
-export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocus }: Props) {
+export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocus, onHover }: Props) {
   return (
-    <div className="checkpoint-table-wrap">
-      <table className="checkpoint-table">
+    <div className="cp-wrap" onMouseLeave={() => onHover(null)}>
+      <table className="cp-table">
         <thead>
           <tr>
             <th scope="col">Mile</th>
             <th scope="col">ETA</th>
-            <th scope="col">Weather</th>
+            <th scope="col" className="num" title="Sustained wind, mph">
+              Wind
+            </th>
+            <th scope="col" className="num" title="Rain, in/hr">
+              Rain
+            </th>
+            <th scope="col" className="num" title="Snow, in/hr">
+              Snow
+            </th>
             <th scope="col">Risk</th>
           </tr>
         </thead>
         <tbody>
           {checkpoints.map((cp) => (
-            <tr key={cp.mile} onClick={() => onFocus(cp)} title={cp.factors.join("\n") || "No risk factors"}>
-              <td>{Math.round(cp.mile)}</td>
+            <tr
+              key={cp.mile}
+              tabIndex={0}
+              onClick={() => onFocus(cp)}
+              onKeyDown={(e) => e.key === "Enter" && onFocus(cp)}
+              onMouseEnter={() => onHover(cp.mile)}
+              title={cp.factors.join("\n") || "No risk factors"}
+            >
+              <td className="num">{Math.round(cp.mile)}</td>
               <td>{formatEta(cp.eta)}</td>
-              <td>{weatherText(cp)}</td>
+              <td className="num">{num(cp.wind_mph, 0)}</td>
+              <td className="num">{num(cp.rain_in_hr, 2)}</td>
+              <td className="num">{num(cp.snow_in_hr, 2)}</td>
               <td>
                 <RiskBadge level={cp.level} />
               </td>

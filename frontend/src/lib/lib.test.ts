@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Heatmap, RouteOption } from "../api/types";
+import type { Heatmap, RouteOption, TripPlan } from "../api/types";
 import { formatDuration } from "./format";
 import { routePath, truckPosition } from "./geo";
 import { framePixels } from "./heatmapImage";
+import { describeChange } from "./live";
 import { RISK_COLOR, colorFor } from "./risk";
 
 describe("colorFor", () => {
@@ -62,4 +63,31 @@ describe("truckPosition", () => {
 it("formats durations", () => {
   expect(formatDuration(17.8)).toBe("17h 48m");
   expect(formatDuration(0.25)).toBe("15m");
+});
+
+describe("describeChange", () => {
+  const plan = (max: string, severe = 0, high = 0) =>
+    ({
+      recommended_route: "A",
+      routes: [
+        {
+          id: "A",
+          max_level: max,
+          miles_by_level: { low: 0, moderate: 0, high, severe, no_travel: 0, unknown: 0 },
+        },
+      ],
+    }) as unknown as TripPlan;
+
+  it("flags a worse worst-level", () => {
+    expect(describeChange(plan("low"), plan("high")).tone).toBe("worse");
+  });
+
+  it("flags more severe miles beyond noise", () => {
+    expect(describeChange(plan("severe", 10), plan("severe", 40)).tone).toBe("worse");
+    expect(describeChange(plan("severe", 10), plan("severe", 12)).tone).toBe("same");
+  });
+
+  it("reports improvement", () => {
+    expect(describeChange(plan("severe", 30), plan("moderate")).tone).toBe("better");
+  });
 });

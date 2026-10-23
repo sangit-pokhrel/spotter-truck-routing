@@ -63,7 +63,7 @@ else:
     # File cache is shared by all gunicorn workers on one instance (LocMem is per process).
     CACHES = {
         "default": {
-            "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+            "BACKEND": "trips.cache.ResilientFileBasedCache",
             "LOCATION": os.environ.get("CACHE_DIR", str(Path(tempfile.gettempdir()) / "truck-routing-cache")),
             "OPTIONS": {"MAX_ENTRIES": 20000},
         }

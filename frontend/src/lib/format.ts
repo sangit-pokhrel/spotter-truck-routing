@@ -15,6 +15,13 @@ export function formatEta(iso: string): string {
   return dateTime.format(new Date(iso));
 }
 
+const clock = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** Compact 24-hour time for dense tables, e.g. "Sat 17:48". */
+export function formatClock(iso: string): string {
+  return clock.format(new Date(iso)).replace(",", "");
+}
+
 export function formatMiles(miles: number): string {
   return `${Math.round(miles).toLocaleString()} mi`;
 }

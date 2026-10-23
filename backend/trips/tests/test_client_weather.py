@@ -4,6 +4,7 @@ from unittest import mock
 
 import pytest
 
+from trips.cache import ResilientFileBasedCache
 from trips.serializers import ClientWeatherSerializer
 from trips.services import weather
 from trips.services.http import RateLimited
@@ -77,3 +78,11 @@ def test_serializer_rejects_malformed_client_weather():
     bad = item()
     bad["hourly"]["rain"] = ["lots"]
     assert not ClientWeatherSerializer(data={**base, "items": [bad]}).is_valid()
+
+
+def test_cache_io_errors_are_cache_misses(tmp_path):
+    c = ResilientFileBasedCache(str(tmp_path), {})
+    with mock.patch("django.core.cache.backends.filebased.FileBasedCache.set", side_effect=PermissionError("locked")):
+        c.set("k", 1)  # must not raise
+    with mock.patch("django.core.cache.backends.filebased.FileBasedCache.get", side_effect=PermissionError("locked")):
+        assert c.get("k", "miss") == "miss"
