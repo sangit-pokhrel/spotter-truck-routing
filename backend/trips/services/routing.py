@@ -40,8 +40,10 @@ MAX_LOCAL_STRETCH = 1.25
 class Route:
     points: list[LatLon]
     seg_miles: list[float]
-    seg_hours: list[float]
+    seg_hours: list[float]  # truck travel time per segment (what ETAs use)
     via_mile: float | None = None  # where the forced via-point sits, for via-routes
+    osrm_hours: list[float] | None = None  # OSRM's own (car-profile) estimate, before truck rules
+    seg_limits: list[float | None] | None = None  # posted speed limit per segment, mph, when known
 
     @property
     def distance_mi(self) -> float:
@@ -70,10 +72,12 @@ def _parse_route(raw: dict, max_speed_mph: float) -> Route:
         total_mi = sum(seg_miles) or 1.0
         seg_hours = [raw["duration"] / 3600 * m / total_mi for m in seg_miles]
 
-    # A loaded truck can't do 80 mph where a car profile might.
+    # A loaded truck can't do 80 mph where a car profile might. Posted limits refine this later
+    # (speed_limits.apply_speed_limits); this cap is the fallback when no limit is known.
+    osrm_hours = seg_hours
     seg_hours = [max(h, m / max_speed_mph) for m, h in zip(seg_miles, seg_hours)]
     via_mile = raw["legs"][0]["distance"] / METERS_PER_MILE if len(raw["legs"]) > 1 else None
-    return Route(points=points, seg_miles=seg_miles, seg_hours=seg_hours, via_mile=via_mile)
+    return Route(points=points, seg_miles=seg_miles, seg_hours=seg_hours, via_mile=via_mile, osrm_hours=osrm_hours)
 
 
 def _osrm(waypoints: list[LatLon], alternatives: int = 0) -> list[Route]:
@@ -165,7 +169,7 @@ def select_distinct(candidates: list[Route], count: int) -> list[Route]:
 
 
 def find_routes(origin: LatLon, destination: LatLon, count: int = 3) -> list[Route]:
-    key = "routes:" + hashlib.sha1(f"{origin[0]:.4f},{origin[1]:.4f};{destination[0]:.4f},{destination[1]:.4f};{count}".encode()).hexdigest()
+    key = "routes:v2:" + hashlib.sha1(f"{origin[0]:.4f},{origin[1]:.4f};{destination[0]:.4f},{destination[1]:.4f};{count}".encode()).hexdigest()
     if (cached := cache.get(key)) is not None:
         return cached
 

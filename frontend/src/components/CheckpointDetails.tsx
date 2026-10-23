@@ -11,7 +11,10 @@ export function CheckpointDetails({ cp, routeName }: { cp: Checkpoint; routeName
         </strong>
         <RiskBadge level={cp.level} />
       </div>
-      <div className="cp-details-eta">ETA {formatEta(cp.eta)}</div>
+      <div className="cp-details-eta">
+        ETA {formatEta(cp.eta)}
+        {cp.speed_limit_mph !== null && ` · limit ${cp.speed_limit_mph} mph`}
+      </div>
       {cp.wind_mph !== null && (
         <dl>
           <dt>Wind</dt>

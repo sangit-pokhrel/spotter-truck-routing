@@ -10,6 +10,7 @@ from .geocoding import Place
 from .recommendation import RouteStats, explain, rank
 from .risk import RiskAssessment, RiskLevel, WeatherSample, assess
 from .routing import Route, find_routes
+from .speed_limits import enrich_routes
 from .weather import Forecast, resolve_forecasts, snap
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ class Checkpoint:
     mile: float
     point: LatLon
     hours: float  # hours after departure
+    speed_limit_mph: float | None = None  # posted limit where the checkpoint sits, when known
     covers: tuple[float, float] = (0.0, 0.0)  # mile range this checkpoint represents
     weather: WeatherSample | None = None
     risk: RiskAssessment | None = None
@@ -73,7 +75,8 @@ def build_checkpoints(route: Route, interval_mi: float) -> list[Checkpoint]:
     for mile in miles:
         point, idx, frac = interpolate(route.points, cum_mi, mile)
         hours = cum_h[idx] + route.seg_hours[idx] * frac if route.seg_hours else 0.0
-        checkpoints.append(Checkpoint(mile=mile, point=point, hours=hours))
+        limit = route.seg_limits[idx] if route.seg_limits else None
+        checkpoints.append(Checkpoint(mile=mile, point=point, hours=hours, speed_limit_mph=limit))
 
     for i, cp in enumerate(checkpoints):
         lo = 0.0 if i == 0 else (checkpoints[i - 1].mile + cp.mile) / 2
@@ -150,6 +153,14 @@ def risk_segments(ev: EvaluatedRoute) -> list[dict]:
     return pieces
 
 
+def limit_coverage(route: Route) -> float:
+    """Share of the route's miles with a known posted speed limit."""
+    if not route.seg_limits or not route.distance_mi:
+        return 0.0
+    known = sum(m for m, limit in zip(route.seg_miles, route.seg_limits) if limit)
+    return known / route.distance_mi
+
+
 def corridor(routes: list[Route]) -> list[list[float]]:
     pts = {(round(lat, 3), round(lon, 3)) for r in routes for lat, lon in resample(r.points, CORRIDOR_STEP_MI)}
     return [[lat, lon] for lat, lon in sorted(pts)]
@@ -162,6 +173,7 @@ def _checkpoint_json(cp: Checkpoint, departure: datetime) -> dict:
         "lat": round(cp.point[0], 5),
         "lon": round(cp.point[1], 5),
         "eta": (departure + timedelta(hours=cp.hours)).isoformat(),
+        "speed_limit_mph": cp.speed_limit_mph,
         "hours_from_departure": round(cp.hours, 3),
         "coverage_mi": round(cp.coverage_mi, 2),
         "level": r.level.key if r else "unknown",
@@ -175,6 +187,10 @@ def _checkpoint_json(cp: Checkpoint, departure: datetime) -> dict:
 
 def plan_trip(req: TripRequest) -> dict:
     routes = find_routes((req.origin.lat, req.origin.lon), (req.destination.lat, req.destination.lon))
+    # Posted limits change truck ETAs (and so which forecast hour each checkpoint gets);
+    # re-sort so Route A is still the fastest for a truck.
+    speed_limits = enrich_routes(routes)
+    routes.sort(key=lambda r: r.duration_h)
     checkpoint_sets = [build_checkpoints(r, req.interval_mi) for r in routes]
 
     all_points = [cp.point for cps in checkpoint_sets for cp in cps]
@@ -193,6 +209,9 @@ def plan_trip(req: TripRequest) -> dict:
         "departure": req.departure.isoformat(),
         "load_weight_lb": req.load_weight_lb,
         "interval_mi": req.interval_mi,
+        # "pending": posted limits for some stretches are still being looked up; plan again
+        # shortly for refined ETAs. See services/speed_limits.py.
+        "speed_limits": speed_limits,
         "recommended_route": ranked[0].name,
         "recommendation_reason": explain(ranked),
         "routes": [
@@ -203,6 +222,8 @@ def plan_trip(req: TripRequest) -> dict:
                 "distance_mi": round(ev.route.distance_mi, 1),
                 "duration_h": round(ev.route.duration_h, 3),
                 "arrival": (req.departure + timedelta(hours=ev.route.duration_h)).isoformat(),
+                "avg_speed_mph": round(ev.route.distance_mi / ev.route.duration_h, 1) if ev.route.duration_h else None,
+                "speed_limit_coverage": round(limit_coverage(ev.route), 3),
                 "miles_by_level": {k: round(v, 1) for k, v in ev.miles_by_level.items()},
                 "avg_risk": round(ev.avg_risk, 3),
                 "max_level": ev.max_level.key if ev.max_level is not None else "unknown",

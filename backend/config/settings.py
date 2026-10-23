@@ -112,8 +112,11 @@ TRUCK_ROUTING = {
     "WEATHER_SOURCE": os.environ.get("WEATHER_SOURCE", "auto"),
     "HTTP_TIMEOUT_S": float(os.environ.get("HTTP_TIMEOUT_S", "20")),
     "USER_AGENT": os.environ.get("HTTP_USER_AGENT", "spotter-truck-routing/1.0"),
-    # Car-profile routing is faster than a loaded truck; cap per-segment speed.
+    # Governed (top) speed of the truck; most fleet trucks are limited to ~65 mph.
     "TRUCK_MAX_SPEED_MPH": float(os.environ.get("TRUCK_MAX_SPEED_MPH", "65")),
+    # Posted speed limits along each route (Valhalla trace_attributes); off → speed cap only.
+    "SPEED_LIMITS_ENABLED": env_bool("SPEED_LIMITS_ENABLED", True),
+    "VALHALLA_URL": os.environ.get("VALHALLA_URL", "https://valhalla1.openstreetmap.de"),
     "WEATHER_CACHE_TTL_S": int(os.environ.get("WEATHER_CACHE_TTL_S", "1800")),
     "ROUTE_CACHE_TTL_S": int(os.environ.get("ROUTE_CACHE_TTL_S", "3600")),
 }

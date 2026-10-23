@@ -25,6 +25,11 @@ const ROWS: Row[] = [
   { label: "Avg risk", priority: 4, value: (r) => r.avg_risk, format: (r) => r.avg_risk.toFixed(2) },
   { label: "Drive time", priority: 5, value: (r) => r.duration_h, format: (r) => formatDuration(r.duration_h) },
   { label: "Distance", value: (r) => r.distance_mi, format: (r) => formatMiles(r.distance_mi) },
+  {
+    label: "Avg speed",
+    value: (r) => -(r.avg_speed_mph ?? 0), // higher is better
+    format: (r) => (r.avg_speed_mph ? `${Math.round(r.avg_speed_mph)} mph` : "–"),
+  },
   { label: "Arrives", value: (r) => Date.parse(r.arrival), format: (r) => formatClock(r.arrival) },
 ];
 

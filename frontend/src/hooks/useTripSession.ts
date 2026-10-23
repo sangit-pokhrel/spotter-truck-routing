@@ -12,8 +12,13 @@ export const LIVE_INTERVAL_MIN = 15;
 /** When the app returns to the foreground, re-check if the last update is older than this. */
 const LIVE_STALE_MS = 5 * 60_000;
 
-/** How the current plan came to be: typed in, refreshed by live mode, or reopened from the device. */
-export type PlanKind = "manual" | "recheck" | "restored";
+/** When the server is still looking up posted speed limits, plan the same trip again after this. */
+const REFINE_DELAY_MS = 12_000;
+const MAX_REFINES = 4;
+
+/** How the current plan came to be: typed in, refreshed by live mode, re-timed with posted
+ *  speed limits, or reopened from the device. */
+export type PlanKind = "manual" | "recheck" | "refine" | "restored";
 
 /**
  * Everything about the driver's current trip that isn't layout:
@@ -37,6 +42,20 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
   const [change, setChange] = useState<PlanChange | null>(null);
   const [liveNote, setLiveNote] = useState<string | null>(null);
   const recheckFrom = useRef<TripPlan | null>(null); // plan being re-checked; null for a manual plan
+  const currentRequest = useRef<PlanRequest | null>(saved?.request ?? null); // exact body behind `plan`
+  const refining = useRef(false);
+  const refines = useRef(0);
+  const refineTimer = useRef<number | undefined>(undefined);
+
+  /** Every plan request goes through here so a later refine repeats exactly the same trip. */
+  const runPlan = useCallback(
+    (body: PlanRequest) => {
+      window.clearTimeout(refineTimer.current);
+      currentRequest.current = body;
+      trip.plan(body);
+    },
+    [trip.plan],
+  );
 
   useEffect(() => {
     if (saved) trip.restore(saved.plan);
@@ -49,9 +68,10 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
       setChange(null);
       setLiveNote(null);
       recheckFrom.current = null;
-      trip.plan(body);
+      refines.current = 0;
+      runPlan(body);
     },
-    [trip.plan],
+    [runPlan],
   );
 
   const recheck = useCallback(async () => {
@@ -64,8 +84,9 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
       setLiveNote("GPS unavailable: refreshed forecasts from the original start instead.");
     }
     recheckFrom.current = plan;
-    trip.plan({ ...lastRequest, origin, departure_time: new Date().toISOString() });
-  }, [lastRequest, plan, trip.loading, trip.plan]);
+    refines.current = 0;
+    runPlan({ ...lastRequest, origin, departure_time: new Date().toISOString() });
+  }, [lastRequest, plan, trip.loading, runPlan]);
 
   const setAlerts = useCallback(async (on: boolean) => {
     const granted = on ? await requestNotifications() : false;
@@ -81,6 +102,10 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
     if (plan === restored.current) {
       kind = "restored";
       setUpdatedAt(saved ? new Date(saved.savedAt) : null);
+    } else if (refining.current) {
+      kind = "refine";
+      refining.current = false;
+      if (plan.speed_limits === "applied") setLiveNote("ETAs refined with posted speed limits.");
     } else {
       restored.current = null;
       setUpdatedAt(new Date());
@@ -94,8 +119,22 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
       }
     }
     onNewPlan(plan, kind);
+
+    // Posted speed limits still being looked up in the background: plan the same trip again
+    // shortly (routes and weather are cached by then) to get the refined ETAs.
+    if (plan.speed_limits === "pending" && kind !== "restored" && refines.current < MAX_REFINES && currentRequest.current) {
+      const body = currentRequest.current;
+      refineTimer.current = window.setTimeout(() => {
+        if (!navigator.onLine) return;
+        refines.current += 1;
+        refining.current = true;
+        runPlan(body);
+      }, REFINE_DELAY_MS);
+    }
     // Only react to a new plan.
   }, [plan]);
+
+  useEffect(() => () => window.clearTimeout(refineTimer.current), []);
 
   // Persist new plans (and their heatmap once it arrives) for offline use.
   useEffect(() => {

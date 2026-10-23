@@ -12,6 +12,8 @@ export interface Checkpoint {
   lon: number;
   eta: string;
   hours_from_departure: number;
+  /** Posted limit at this checkpoint (mph), when known. */
+  speed_limit_mph: number | null;
   coverage_mi: number;
   level: RiskKey;
   wind_mph: number | null;
@@ -33,6 +35,9 @@ export interface RouteOption {
   distance_mi: number;
   duration_h: number;
   arrival: string;
+  avg_speed_mph: number | null;
+  /** Share of the route's miles with a known posted speed limit (0–1). */
+  speed_limit_coverage: number;
   miles_by_level: Record<RiskKey, number>;
   avg_risk: number;
   max_level: RiskKey;
@@ -46,6 +51,8 @@ export interface TripPlan {
   departure: string;
   load_weight_lb: number;
   interval_mi: number;
+  /** "pending": limits for some stretches are still being looked up; plan again for refined ETAs. */
+  speed_limits: "applied" | "pending" | "unavailable" | "disabled";
   recommended_route: string;
   recommendation_reason: string;
   routes: RouteOption[];

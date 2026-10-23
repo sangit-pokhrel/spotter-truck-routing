@@ -56,7 +56,7 @@ Each checkpoint takes the **worst** of its wind, rain and snow levels:
 | Rain | < 0.10 in/hr | 0.10–0.25 | 0.25–0.50 | 0.50–1.00 | > 1.00 |
 | Snow | < 0.5 in/hr | 0.5–1.0 | 1.0–2.0 | 2.0–3.0 | > 3.0 |
 
-Then the **load rules** are applied (they can only *raise* the risk):
+Then the **load rules** are applied. The mph here is **wind speed**, not driving speed: heavy trailers are what high crosswinds push around or tip. They can only *raise* the risk:
 
 - Wind ≥ 55 mph → **No Travel** for any load
 - Wind 45–54 mph with load **> 30,000 lb** → **No Travel**
@@ -80,7 +80,7 @@ The PDF asks for routes, weather sampling at the ETA, risk scoring, a recommenda
 | **Mobile-first, few steps** | Results lead with the recommendation, then the map and slider. The trip form collapses to one line. Finger-sized controls; *My location*; one-tap departure times; load and interval remembered. | `styles.css`, `TripForm.tsx` |
 | **Weather along the route strip** | The selected route as a risk-coloured bar by mile with hour ticks; touch it to see weather at that spot, synced with the map. | `RouteProfile.tsx` |
 | **Explainable ranking** | A comparison table in ranking order with each row's winner highlighted, plus a sentence naming the deciding criterion. | `RouteComparison.tsx`, `recommendation.py` |
-| **Truck-realistic ETAs** | Per-road-segment travel times with a 65 mph truck speed cap, not one average speed. | `routing.py` |
+| **Posted speed limits in ETAs** | Every route is checked against real posted limits (OpenStreetMap via Valhalla). Trucks drive highways at the lower of the posted limit and their governed speed, and never exceed a limit elsewhere. On Denver→Chicago this moved the ETA by ~2 h versus a flat cap, which changes which forecast hour each checkpoint gets. Limits show at every checkpoint. | `speed_limits.py` |
 | **Better route alternatives** | Via-point alternatives, filtered for duplicates, absurd detours and out-and-back "spurs". | `routing.py` |
 | **Rate-limit resilience** | When Open-Meteo throttles the server's shared IP, the browser fetches the forecast with its own quota while the server keeps all the logic. Circuit breaker, caching, retries. | `weather.py`, `client.ts` |
 | **"No Travel" ranked first** | A route you can't safely drive never wins just because it has fewer Severe miles. | `recommendation.py` |
@@ -200,7 +200,9 @@ Everything has a sensible default; see [`.env.example`](.env.example).
 | `OSRM_URL` | public OSRM | Point at a self-hosted OSRM |
 | `PHOTON_URL` | public Photon | Point at a self-hosted Photon |
 | `OPEN_METEO_API_KEY` | – | Use Open-Meteo's commercial tier |
-| `TRUCK_MAX_SPEED_MPH` | `65` | Speed cap applied to car-profile routing |
+| `TRUCK_MAX_SPEED_MPH` | `65` | Truck's governed (top) speed |
+| `SPEED_LIMITS_ENABLED` | `true` | Use posted speed limits in ETAs |
+| `VALHALLA_URL` | public Valhalla | Point at a self-hosted Valhalla for speed limits |
 | `API_RATE_LIMIT` | `120/min` | Per-client API throttle |
 | `VITE_API_URL` | same origin | Frontend build-time: API on another host |
 | `VITE_TILE_URL` | Esri light gray | Frontend build-time: custom base map tiles |
@@ -236,9 +238,24 @@ OSRM's built-in alternatives usually return only 1–2 routes. To always offer t
 ### 2. Checkpoints and ETAs
 
 - Checkpoints sit at mile 0, N, 2N, … and at the destination.
-- The ETA at each one comes from OSRM's **per-segment travel times along the real road geometry**, not an average speed.
-- OSRM's car profile is faster than a loaded truck, so each road segment is **capped at 65 mph**.
+- The ETA at each one comes from **per-road-segment travel times along the real road geometry**, not an average speed. Each segment is timed as a truck would drive it, using the road's **posted speed limit** (see [Posted speed limits](#posted-speed-limits)).
 - Each checkpoint **represents the road halfway to its neighbours**, so "Severe miles" adds up to real road distance, and a short final interval is weighted correctly.
+
+### Posted speed limits
+
+The ETA decides which forecast hour each checkpoint is checked against, so it should reflect how a truck actually drives the road.
+
+1. **Look up the limits.** Each route is map-matched against **Valhalla** (`trace_attributes`, the public OpenStreetMap instance), which returns the posted limit and road class for every stretch. Coverage on US interstates is ~98–100%.
+2. **Time each segment as a truck:**
+   - **Motorway / trunk:** the lower of the posted limit and the truck's **governed speed** (`TRUCK_MAX_SPEED_MPH`, default 65; most fleet trucks are speed-limited). A 75 mph interstate is driven at 65, a 55 mph stretch at 55.
+   - **Other roads:** OSRM's estimate, which includes turns and intersections, but never faster than the posted limit or the governed speed.
+   - **No limit known:** OSRM's estimate capped at the governed speed.
+3. **Show them:** each checkpoint shows the posted limit at that spot, and each route its average truck speed.
+
+**Fast and polite to a free server.** The public Valhalla server allows ~1 request/second and 200 km per request, so a cross-country trip needs many lookups.
+- **Spatial cache:** limits are cached by **map cell (~500 m) and direction of travel**, not per route. Any later route over the same roads (the other options, live re-checks from GPS, other users) reuses them without calling Valhalla.
+- **Plans never wait:** a plan uses what's already known, and missing stretches are fetched **in the background**, 2 at a time, backing off on 429. The plan reports `speed_limits: "pending"`, and the app quietly re-plans a few seconds later to pick up the refined ETAs. The heatmap isn't refetched, because it doesn't depend on ETAs.
+- **Failures cool down** for 5 minutes, and ETAs fall back to the capped OSRM estimate, so planning never breaks if the service is down.
 
 ### 3. Weather at the ETA
 
@@ -369,6 +386,7 @@ Open-Meteo's free tier limits requests **per IP address**, and free cloud hosts 
 | Need | Service |
 |---|---|
 | Routing | [OSRM](https://project-osrm.org/) public server |
+| Posted speed limits | [Valhalla](https://valhalla.github.io/valhalla/) public server (OpenStreetMap `maxspeed`) |
 | Weather | [Open-Meteo](https://open-meteo.com/) hourly forecast API |
 | Geocoding / autocomplete | [Photon](https://photon.komoot.io/) (OpenStreetMap data) |
 | Base maps | Esri World Light Gray / Dark Gray / Imagery |
@@ -396,6 +414,7 @@ backend/                       Django 5 + DRF (stateless API)
       planner.py               routes → checkpoints/ETAs → weather → risk → ranking
       heatmap.py               corridor grid + 49 hourly frames
       routing.py               OSRM client + via-point alternatives
+      speed_limits.py          posted limits (Valhalla), spatial cache, truck segment timing
       weather.py               Open-Meteo client, batching, caching, browser fallback
       geocoding.py             Photon client
       http.py                  shared HTTP session: pooling, retries, timeouts
@@ -467,7 +486,7 @@ Example `POST /api/plan/` body:
 ## Testing
 
 ```bash
-cd backend && pytest            # 80 tests
+cd backend && pytest            # 93 tests
 cd frontend && npm test         # 17 tests
 cd frontend && npm run typecheck
 ```
@@ -476,6 +495,7 @@ What's covered:
 
 - **Risk rules:** every band boundary for wind, rain and snow (including `≥` vs `>` at the top), and all load rules at their exact thresholds (30,000 / 30,001 lb, 40,000 / 40,001 lb).
 - **Recommendation:** each ranking criterion and its tie-breakers, No Travel ordering, float-noise rounding, explanation text.
+- **Speed limits:** the truck timing rule for every road type, mapping matched edges onto route miles, spatial reuse by differently sampled routes, background (non-blocking) lookups, failure cooldown, chunking under service limits.
 - **Planner:** checkpoint placement, ETAs from uneven segment speeds, mile coverage with a partial last interval, weather sampled at the ETA hour, risk-coloured route segments.
 - **Providers (HTTP mocked):** OSRM parsing and the truck speed cap, via-point alternatives, spur rejection, Open-Meteo unit conversion, batching and caching.
 - **Browser weather fallback:** client/auto/server modes, the circuit breaker, validation of browser-supplied data, cache I/O errors treated as misses.
@@ -531,7 +551,8 @@ docker run -p 8000:8000 -e DJANGO_SECRET_KEY=... -e DJANGO_ALLOWED_HOSTS=your.do
 
 ## Assumptions, trade-offs and limitations
 
-- **Routing uses a car profile with a truck speed cap,** not a true heavy-goods-vehicle profile, so bridge heights and weight-restricted roads aren't modelled. A truck routing API (e.g. HERE, or OpenRouteService `driving-hgv`) can be swapped in inside `routing.py` without touching the rules.
+- **Routing geometry uses a car profile;** truck ETAs come from posted limits and the governed speed, but bridge heights and weight-restricted roads aren't modelled. Truck-specific posted limits (`maxspeed:hgv`, e.g. California's 55 mph truck limit) aren't separated from general limits; the governed-speed cap covers most of the difference.
+- **Posted limits come from a free, volunteer-run server.** When it's slow or unavailable, ETAs use the fallback until limits arrive. Production should self-host Valhalla (`VALHALLA_URL`). A truck routing API (e.g. HERE, or OpenRouteService `driving-hgv`) can be swapped in inside `routing.py` without touching the rules.
 - **Sustained wind** (`wind_speed_10m`) drives the classification, as the table specifies. Gusts are shown for context.
 - **No hours-of-service breaks** are added, so ETAs on trips with more than ~11 hours of driving are optimistic. Live updates correct ETAs as the trip progresses.
 - **Weather comes from the forecast hour nearest the ETA.** Times beyond Open-Meteo's ~15-day horizon show as "No data", and those miles are reported separately rather than counted as Low.

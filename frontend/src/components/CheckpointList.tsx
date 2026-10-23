@@ -21,6 +21,9 @@ export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocu
           <tr>
             <th scope="col">Mile</th>
             <th scope="col">ETA</th>
+            <th scope="col" className="num" title="Posted speed limit, mph">
+              Limit
+            </th>
             <th scope="col" className="num" title="Sustained wind, mph">
               Wind
             </th>
@@ -45,6 +48,7 @@ export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocu
             >
               <td className="num">{Math.round(cp.mile)}</td>
               <td>{formatEta(cp.eta)}</td>
+              <td className="num">{num(cp.speed_limit_mph, 0)}</td>
               <td className="num">{num(cp.wind_mph, 0)}</td>
               <td className="num">{num(cp.rain_in_hr, 2)}</td>
               <td className="num">{num(cp.snow_in_hr, 2)}</td>

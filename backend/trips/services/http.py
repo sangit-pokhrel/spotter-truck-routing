@@ -55,8 +55,16 @@ def _error_reason(resp: requests.Response) -> str:
 
 
 def get_json(url: str, params: dict[str, Any] | None = None, *, provider: str) -> Any:
+    return _request_json("GET", url, provider=provider, params=params)
+
+
+def post_json(url: str, body: Any, *, provider: str) -> Any:
+    return _request_json("POST", url, provider=provider, json=body)
+
+
+def _request_json(method: str, url: str, *, provider: str, **kwargs: Any) -> Any:
     try:
-        resp = session().get(url, params=params, timeout=_config()["HTTP_TIMEOUT_S"])
+        resp = session().request(method, url, timeout=_config()["HTTP_TIMEOUT_S"], **kwargs)
     except requests.RequestException as exc:
         logger.warning("%s request failed: %s", provider, exc)
         raise ProviderError(f"{provider} is unreachable. Please try again.") from exc

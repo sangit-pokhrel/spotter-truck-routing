@@ -41,6 +41,11 @@ export function useTripPlan() {
  *  `preset` supplies an already-known heatmap for that exact plan (restored from the device). */
 export function useHeatmap(plan: TripPlan | null, preset: { plan: TripPlan; heatmap: Heatmap } | null = null) {
   const [state, setState] = useState<AsyncState<Heatmap>>({ data: null, loading: false, error: null });
+  // The heatmap depends only on the corridor, departure and load, not on ETAs, so a plan that
+  // was merely re-timed (posted speed limits) keeps the heatmap it already has.
+  const key = plan
+    ? `${plan.departure}|${plan.load_weight_lb}|${plan.corridor.length}|${plan.corridor[0]}|${plan.corridor[plan.corridor.length - 1]}`
+    : "";
 
   useEffect(() => {
     if (!plan) return;
@@ -57,8 +62,8 @@ export function useHeatmap(plan: TripPlan | null, preset: { plan: TripPlan; heat
         if (err.name !== "AbortError") setState({ data: null, loading: false, error: err.message });
       });
     return () => ctrl.abort();
-    // `preset` only matters when the plan changes.
-  }, [plan]);
+    // Keyed on what the heatmap depends on; `preset` only matters for the restored plan.
+  }, [key]);
 
   return state;
 }

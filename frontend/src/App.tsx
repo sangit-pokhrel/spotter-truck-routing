@@ -35,7 +35,7 @@ export default function App() {
       setHour(0);
       setFocused(null);
       setHoveredMile(null);
-      if (kind === "recheck") return; // live refresh: don't collapse or scroll the driver's view
+      if (kind === "recheck" || kind === "refine") return; // background refresh: keep the driver's view
       setEditing(false);
       // Phones: the map moves to the top once there are results; bring it into view.
       if (kind === "manual" && compact) window.scrollTo({ top: 0, behavior: "smooth" });
