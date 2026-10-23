@@ -7,6 +7,12 @@ from .services import geocoding
 from .services.geo import haversine_mi
 from .services.heatmap import build_heatmap
 from .services.planner import TripRequest, plan_trip
+from .services.weather import WeatherRequired
+
+
+def weather_required(exc: WeatherRequired) -> Response:
+    """Ask the client to fetch forecasts and repeat the request with them (see weather.py)."""
+    return Response({"weather_request": exc.request})
 
 
 class HealthView(APIView):
@@ -42,8 +48,12 @@ class PlanView(APIView):
             departure=data["departure_time"],
             load_weight_lb=data["load_weight_lb"],
             interval_mi=int(data["interval_miles"]),
+            client_weather=data.get("weather"),
         )
-        return Response(plan_trip(trip))
+        try:
+            return Response(plan_trip(trip))
+        except WeatherRequired as exc:
+            return weather_required(exc)
 
 
 class HeatmapView(APIView):
@@ -51,4 +61,10 @@ class HeatmapView(APIView):
         serializer = HeatmapRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        return Response(build_heatmap(data["corridor"], data["departure_time"], data["load_weight_lb"]))
+        try:
+            heatmap = build_heatmap(
+                data["corridor"], data["departure_time"], data["load_weight_lb"], client_weather=data.get("weather")
+            )
+        except WeatherRequired as exc:
+            return weather_required(exc)
+        return Response(heatmap)

@@ -73,6 +73,26 @@ def test_provider_failure_returns_502(client):
     assert resp.json() == {"detail": "Routing service returned HTTP 503."}
 
 
+def test_plan_asks_client_for_weather_then_uses_it(client):
+    from trips.services.weather import WeatherRequired
+
+    request = {"url": "u", "params": {}, "locations": [[40.0, -100.0]], "batch_size": 100}
+    with mock.patch.object(views, "plan_trip", side_effect=WeatherRequired(request)):
+        resp = client.post("/api/plan/", payload(), format="json")
+    assert resp.status_code == 200
+    assert resp.json() == {"weather_request": request}
+
+    weather = {
+        "start_hour": "2026-10-24T05:00",
+        "locations": [[40.0, -100.0]],
+        "items": [{"hourly": {"wind_speed_10m": [5.0]}, "hourly_units": {}}],
+    }
+    with mock.patch.object(views, "plan_trip", return_value={}) as plan:
+        resp = client.post("/api/plan/", payload(weather=weather), format="json")
+    assert resp.status_code == 200
+    assert plan.call_args.args[0].client_weather["locations"] == [[40.0, -100.0]]
+
+
 def test_heatmap_validates_corridor(client):
     body = {"corridor": [[1000, 0]], "departure_time": payload()["departure_time"], "load_weight_lb": 1000}
     assert client.post("/api/heatmap/", body, format="json").status_code == 400

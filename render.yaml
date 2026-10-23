@@ -12,3 +12,7 @@ services:
         value: .onrender.com
       - key: WEB_CONCURRENCY
         value: "2"
+      # Open-Meteo rate-limits Render's shared egress IPs; let browsers fetch forecasts
+      # (risk logic still runs server-side). See backend/trips/services/weather.py.
+      - key: WEATHER_SOURCE
+        value: client

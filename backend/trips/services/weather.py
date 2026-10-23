@@ -16,7 +16,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 from .geo import LatLon
-from .http import ProviderError, get_json
+from .http import ProviderError, RateLimited, get_json
 from .risk import WeatherSample
 
 logger = logging.getLogger(__name__)
@@ -81,18 +81,33 @@ def _parse(item: dict, start: datetime) -> Forecast:
     )
 
 
-def _fetch_batch(locations: list[LatLon], start: datetime, end: datetime) -> list[Forecast]:
-    api_key = settings.TRUCK_ROUTING["OPEN_METEO_API_KEY"]
-    base = "https://customer-api.open-meteo.com" if api_key else "https://api.open-meteo.com"
-    params = {
-        "latitude": ",".join(f"{lat:.4f}" for lat, _ in locations),
-        "longitude": ",".join(f"{lon:.4f}" for _, lon in locations),
+def _window(start: datetime, end: datetime) -> tuple[datetime, datetime] | None:
+    """Whole-hour UTC window covering [start, end], clipped to the forecast horizon."""
+    start = floor_hour(start)
+    horizon = floor_hour(datetime.now(timezone.utc)).replace(hour=23) + timedelta(days=FORECAST_HORIZON_DAYS)
+    end = min(floor_hour(end) + timedelta(hours=1), horizon)
+    return None if end < start else (start, end)
+
+
+def query_params(start: datetime, end: datetime) -> dict[str, str]:
+    """Open-Meteo query (minus coordinates); shared by the server fetch and client requests."""
+    return {
         "hourly": HOURLY_VARS,
         "wind_speed_unit": "mph",
         "precipitation_unit": "inch",
         "timezone": "GMT",
         "start_hour": start.strftime("%Y-%m-%dT%H:%M"),
         "end_hour": end.strftime("%Y-%m-%dT%H:%M"),
+    }
+
+
+def _fetch_batch(locations: list[LatLon], start: datetime, end: datetime) -> list[Forecast]:
+    api_key = settings.TRUCK_ROUTING["OPEN_METEO_API_KEY"]
+    base = "https://customer-api.open-meteo.com" if api_key else "https://api.open-meteo.com"
+    params = {
+        "latitude": ",".join(f"{lat:.4f}" for lat, _ in locations),
+        "longitude": ",".join(f"{lon:.4f}" for _, lon in locations),
+        **query_params(start, end),
     }
     if api_key:
         params["apikey"] = api_key
@@ -105,15 +120,13 @@ def _fetch_batch(locations: list[LatLon], start: datetime, end: datetime) -> lis
 
 def get_forecasts(points: list[LatLon], start: datetime, end: datetime) -> dict[LatLon, Forecast]:
     """Hourly forecasts covering [start, end] for each point, keyed by `snap(point)`."""
-    start = floor_hour(start)
-    horizon = floor_hour(datetime.now(timezone.utc)).replace(hour=23) + timedelta(days=FORECAST_HORIZON_DAYS)
-    end = min(floor_hour(end) + timedelta(hours=1), horizon)
-    if end < start:
+    if (window := _window(start, end)) is None:
         return {}
+    start, end = window
 
-    window = f"{start:%Y%m%d%H}-{end:%Y%m%d%H}"
+    span = f"{start:%Y%m%d%H}-{end:%Y%m%d%H}"
     unique = list(dict.fromkeys(snap(p) for p in points))
-    keys = {loc: f"wx:{loc[0]},{loc[1]}:{window}" for loc in unique}
+    keys = {loc: f"wx:{loc[0]},{loc[1]}:{span}" for loc in unique}
     found: dict[LatLon, Forecast] = {}
     cached = cache.get_many(list(keys.values()))
     for loc, key in keys.items():
@@ -133,3 +146,72 @@ def get_forecasts(points: list[LatLon], start: datetime, end: datetime) -> dict[
                 fresh[keys[loc]] = fc
         cache.set_many(fresh, settings.TRUCK_ROUTING["WEATHER_CACHE_TTL_S"])
     return found
+
+
+# --- Client-assisted fetching ------------------------------------------------------------
+# Open-Meteo's free tier limits requests per IP, and shared cloud egress IPs (e.g. Render's
+# free tier) hit that limit. In that case the API asks the browser to fetch the exact same
+# query with its own IP/quota and post the raw hourly data back. All parsing, risk rules and
+# ranking still run here; the browser is only a transport.
+
+SERVER_LIMITED_KEY = "wx:server-rate-limited"
+SERVER_LIMITED_TTL_S = 600
+
+
+class WeatherRequired(Exception):
+    """Raised to ask the client to fetch forecasts; carries the request to perform."""
+
+    def __init__(self, request: dict):
+        super().__init__("Client weather fetch required")
+        self.request = request
+
+
+def client_request(points: list[LatLon], start: datetime, end: datetime) -> dict | None:
+    if (window := _window(start, end)) is None:
+        return None
+    unique = list(dict.fromkeys(snap(p) for p in points))
+    return {
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "params": query_params(*window),
+        "locations": [[lat, lon] for lat, lon in unique],
+        "batch_size": BATCH_SIZE,
+    }
+
+
+def from_client(payload: dict) -> dict[LatLon, Forecast]:
+    """Parse forecasts the browser fetched (validated by the serializer)."""
+    start = payload["start_hour"]
+    return {
+        snap((lat, lon)): _parse(item, start)
+        for (lat, lon), item in zip(payload["locations"], payload["items"])
+    }
+
+
+def resolve_forecasts(
+    points: list[LatLon], start: datetime, end: datetime, supplied: dict | None = None
+) -> dict[LatLon, Forecast]:
+    """Forecasts from the client payload, else the server fetch, else ask the client.
+
+    WEATHER_SOURCE: "auto" (server, falling back to client while rate-limited),
+    "server" (never ask the client) or "client" (always ask the client).
+    """
+    if supplied is not None:
+        return from_client(supplied)
+    mode = settings.TRUCK_ROUTING["WEATHER_SOURCE"]
+    if mode == "client" or (mode == "auto" and cache.get(SERVER_LIMITED_KEY)):
+        return _ask_client(points, start, end)
+    try:
+        return get_forecasts(points, start, end)
+    except RateLimited:
+        if mode != "auto":
+            raise
+        logger.warning("Open-Meteo rate-limited this server; using client-side fetch for %ss", SERVER_LIMITED_TTL_S)
+        cache.set(SERVER_LIMITED_KEY, True, SERVER_LIMITED_TTL_S)
+        return _ask_client(points, start, end)
+
+
+def _ask_client(points: list[LatLon], start: datetime, end: datetime) -> dict[LatLon, Forecast]:
+    """Raise WeatherRequired, unless the window is past the forecast horizon (nothing to fetch)."""
+    if (request := client_request(points, start, end)) is None:
+        return {}
+    raise WeatherRequired(request)

@@ -17,6 +17,10 @@ class ProviderError(Exception):
     """An upstream API (routing, weather, geocoding) failed or returned unusable data."""
 
 
+class RateLimited(ProviderError):
+    """The upstream API refused us with HTTP 429 (free tiers limit per client IP)."""
+
+
 def _config() -> dict[str, Any]:
     return settings.TRUCK_ROUTING
 
@@ -59,7 +63,7 @@ def get_json(url: str, params: dict[str, Any] | None = None, *, provider: str) -
     if resp.status_code >= 400:
         logger.warning("%s returned %s: %s", provider, resp.status_code, resp.text[:300])
         if resp.status_code == 429:
-            raise ProviderError(f"{provider} is rate-limiting requests. Please try again in a minute.")
+            raise RateLimited(f"{provider} is rate-limiting requests. Please try again in a minute.")
         reason = _error_reason(resp)
         raise ProviderError(f"{provider} returned HTTP {resp.status_code}{f': {reason}' if reason else '.'}")
     try:

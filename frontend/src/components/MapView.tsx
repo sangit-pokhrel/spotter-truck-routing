@@ -9,8 +9,12 @@ import { CheckpointDetails } from "./CheckpointDetails";
 export const ROUTE_COLORS: Record<string, string> = { A: "#2563eb", B: "#0e9f8e", C: "#c026d3" };
 
 const US_CENTER: LatLng = [39.5, -98.35];
-const TILE_URL = import.meta.env.VITE_TILE_URL ?? "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+// Esri's light-gray canvas: keyless, CDN-backed, and calm enough for routes + heatmap on top.
+// (OSM's volunteer tile servers block many hosted apps.)
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
+const TILE_URL = import.meta.env.VITE_TILE_URL ?? `${ESRI}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`;
+const LABELS_URL = `${ESRI}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`;
+const TILE_ATTRIBUTION = "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors";
 
 export interface HeatOverlay {
   url: string;
@@ -125,7 +129,12 @@ export function MapView({ plan, selectedId, onSelectRoute, heat, truck, focused,
 
   return (
     <MapContainer center={US_CENTER} zoom={4} preferCanvas className="map" zoomControl>
-      <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} maxZoom={19} className="basemap" />
+      <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} maxZoom={16} />
+      {!import.meta.env.VITE_TILE_URL && (
+        <Pane name="labels" style={{ zIndex: 450, pointerEvents: "none" }}>
+          <TileLayer url={LABELS_URL} maxZoom={16} />
+        </Pane>
+      )}
       <Pane name="heatmap" style={{ zIndex: 350 }}>
         {heat && <ImageOverlay url={heat.url} bounds={heat.bounds} opacity={0.85} className="heat-image" />}
       </Pane>

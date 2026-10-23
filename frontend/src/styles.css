@@ -709,11 +709,6 @@ button.primary:disabled {
   pointer-events: none;
 }
 
-/* Calm the busy OSM palette so routes and the heatmap stand out. */
-.basemap {
-  filter: grayscale(0.85) contrast(0.9) brightness(1.04);
-}
-
 .map-pin span {
   display: grid;
   place-items: center;

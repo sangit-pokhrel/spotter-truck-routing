@@ -10,7 +10,7 @@ from .geocoding import Place
 from .recommendation import RouteStats, explain, rank
 from .risk import RiskAssessment, RiskLevel, WeatherSample, assess
 from .routing import Route, find_routes
-from .weather import Forecast, get_forecasts, snap
+from .weather import Forecast, resolve_forecasts, snap
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class TripRequest:
     departure: datetime  # timezone-aware
     load_weight_lb: float
     interval_mi: int
+    client_weather: dict | None = None  # browser-fetched forecasts, see weather.resolve_forecasts
 
 
 @dataclass
@@ -178,7 +179,7 @@ def plan_trip(req: TripRequest) -> dict:
 
     all_points = [cp.point for cps in checkpoint_sets for cp in cps]
     last_eta = req.departure + timedelta(hours=max(r.duration_h for r in routes))
-    forecasts = get_forecasts(all_points, req.departure, last_eta)
+    forecasts = resolve_forecasts(all_points, req.departure, last_eta, req.client_weather)
     for cps in checkpoint_sets:
         apply_weather(cps, req.departure, forecasts, req.load_weight_lb)
 

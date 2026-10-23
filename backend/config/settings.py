@@ -1,5 +1,6 @@
 """Django settings. Everything environment-specific is read from env vars (12-factor)."""
 import os
+import tempfile
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -59,9 +60,11 @@ REDIS_URL = os.environ.get("REDIS_URL")
 if REDIS_URL:
     CACHES = {"default": {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": REDIS_URL}}
 else:
+    # File cache is shared by all gunicorn workers on one instance (LocMem is per process).
     CACHES = {
         "default": {
-            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+            "LOCATION": os.environ.get("CACHE_DIR", str(Path(tempfile.gettempdir()) / "truck-routing-cache")),
             "OPTIONS": {"MAX_ENTRIES": 20000},
         }
     }
@@ -69,6 +72,9 @@ else:
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_TZ = True
+
+# Client-forwarded forecasts (see trips/services/weather.py) can be a few hundred KB.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
@@ -102,6 +108,8 @@ TRUCK_ROUTING = {
     "PHOTON_URL": os.environ.get("PHOTON_URL", "https://photon.komoot.io"),
     # Commercial Open-Meteo key is optional; the free endpoint is used without it.
     "OPEN_METEO_API_KEY": os.environ.get("OPEN_METEO_API_KEY", ""),
+    # auto | server | client — where hourly forecasts are fetched (see weather.resolve_forecasts).
+    "WEATHER_SOURCE": os.environ.get("WEATHER_SOURCE", "auto"),
     "HTTP_TIMEOUT_S": float(os.environ.get("HTTP_TIMEOUT_S", "20")),
     "USER_AGENT": os.environ.get("HTTP_USER_AGENT", "spotter-truck-routing/1.0"),
     # Car-profile routing is faster than a loaded truck; cap per-segment speed.

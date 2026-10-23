@@ -3,18 +3,10 @@ from datetime import datetime, timezone
 from unittest import mock
 
 import pytest
-from django.core.cache import cache
 
 from trips.services import routing, weather
 from trips.services.geocoding import parse_coordinates
 from trips.services.routing import Route, select_distinct
-
-
-@pytest.fixture(autouse=True)
-def clear_cache():
-    cache.clear()
-    yield
-    cache.clear()
 
 
 def osrm_route(coords, seconds_per_seg=60.0, meters_per_seg=1609.344):

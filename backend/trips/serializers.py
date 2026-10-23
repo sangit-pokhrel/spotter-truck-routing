@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -45,12 +45,46 @@ def validate_departure(value):
     return value
 
 
+MAX_WEATHER_LOCATIONS = 5000
+MAX_WEATHER_HOURS = 24 * 17
+WEATHER_SERIES = ("wind_speed_10m", "wind_gusts_10m", "rain", "showers", "snowfall")
+
+
+class ClientWeatherSerializer(serializers.Serializer):
+    """Raw Open-Meteo hourly data the browser fetched on our behalf (see weather.WeatherRequired)."""
+
+    start_hour = serializers.DateTimeField(default_timezone=dt_timezone.utc)
+    locations = serializers.ListField(
+        child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
+        max_length=MAX_WEATHER_LOCATIONS,
+    )
+    items = serializers.ListField(child=serializers.DictField(), max_length=MAX_WEATHER_LOCATIONS)
+
+    def validate(self, attrs):
+        if len(attrs["locations"]) != len(attrs["items"]):
+            raise serializers.ValidationError("locations and items must have the same length.")
+        for item in attrs["items"]:
+            hourly = item.get("hourly")
+            if not isinstance(hourly, dict) or not isinstance(hourly.get("wind_speed_10m"), list):
+                raise serializers.ValidationError("Each item needs hourly.wind_speed_10m.")
+            for name in WEATHER_SERIES:
+                series = hourly.get(name, [])
+                if not isinstance(series, list) or len(series) > MAX_WEATHER_HOURS:
+                    raise serializers.ValidationError(f"Invalid hourly.{name}.")
+                if any(v is not None and not isinstance(v, (int, float)) for v in series):
+                    raise serializers.ValidationError(f"hourly.{name} must contain numbers.")
+            if not isinstance(item.get("hourly_units", {}), dict):
+                raise serializers.ValidationError("hourly_units must be an object.")
+        return attrs
+
+
 class PlanRequestSerializer(serializers.Serializer):
     origin = PlaceField()
     destination = PlaceField()
     departure_time = serializers.DateTimeField(validators=[validate_departure])
     load_weight_lb = serializers.FloatField(min_value=1, max_value=MAX_LOAD_LB)
     interval_miles = serializers.ChoiceField(choices=[10, 25, 50], default=25)
+    weather = ClientWeatherSerializer(required=False)
 
 
 class HeatmapRequestSerializer(serializers.Serializer):
@@ -61,6 +95,7 @@ class HeatmapRequestSerializer(serializers.Serializer):
     )
     departure_time = serializers.DateTimeField(validators=[validate_departure])
     load_weight_lb = serializers.FloatField(min_value=1, max_value=MAX_LOAD_LB)
+    weather = ClientWeatherSerializer(required=False)
 
     def validate_corridor(self, value):
         for lat, lon in value:

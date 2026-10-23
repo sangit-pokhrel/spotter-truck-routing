@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from .geo import LatLon, inverse_mercator_y, mercator_y
 from .planner import CORRIDOR_STEP_MI
 from .risk import assess
-from .weather import get_forecasts, snap
+from .weather import resolve_forecasts, snap
 
 CORRIDOR_HALF_WIDTH_MI = 40.0
 MAX_CELLS = 450
@@ -93,10 +93,16 @@ def build_grid(corridor: list[LatLon]) -> tuple[dict, list[tuple[int, LatLon]]]:
     return grid, cells
 
 
-def build_heatmap(corridor: list[LatLon], departure: datetime, load_weight_lb: float, hours: int = 48) -> dict:
+def build_heatmap(
+    corridor: list[LatLon],
+    departure: datetime,
+    load_weight_lb: float,
+    hours: int = 48,
+    client_weather: dict | None = None,
+) -> dict:
     grid, cells = build_grid(corridor)
     end = departure + timedelta(hours=hours)
-    forecasts = get_forecasts([c for _, c in cells], departure, end)
+    forecasts = resolve_forecasts([c for _, c in cells], departure, end, client_weather)
 
     metrics = ("risk", "wind", "rain", "snow")
     frames: dict[str, list[list]] = {m: [] for m in metrics}
