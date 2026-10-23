@@ -1367,8 +1367,7 @@ details[open] > summary.section-title {
     top: 0;
     z-index: 1100;
   }
-  .topbar-sub,
-  .topbar-meta {
+  .topbar-sub {
     display: none;
   }
   .workspace {
@@ -1634,5 +1633,86 @@ details[open] > summary.section-title {
   }
   .switch input:checked + .switch-track::after {
     transform: translateX(20px);
+  }
+}
+
+/* ---------- PWA: install, offline/saved banners, pop-out ---------- */
+.install-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--brand);
+  color: #fff;
+  font: 500 12px var(--sans);
+  cursor: pointer;
+}
+
+.topbar-meta {
+  align-items: center;
+}
+
+.offline-bar,
+.saved-bar {
+  padding: 8px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.offline-bar {
+  background: #fff4e0;
+  color: #6b4500;
+}
+
+.saved-bar {
+  background: var(--brand-soft);
+  color: var(--ink-2);
+}
+
+.saved-bar .link-btn {
+  margin-left: 4px;
+}
+
+.live-row-sub {
+  margin-top: 10px;
+}
+
+.map-btn.on {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.pip-source {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  bottom: 0;
+  right: 0;
+}
+
+@media (max-width: 900px) {
+  .offline-bar,
+  .saved-bar {
+    position: sticky;
+    top: 48px;
+    z-index: 1090;
+  }
+  .topbar-meta {
+    display: flex;
+    margin-left: auto;
+  }
+  .meta-sources {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .map-toolbar {
+    left: 60px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 }

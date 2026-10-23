@@ -1,0 +1,155 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PlanRequest, TripPlan } from "../api/types";
+import { describeChange, type PlanChange } from "../lib/live";
+import { getCurrentPlace } from "../lib/location";
+import { notificationsSupported, notify, requestNotifications } from "../lib/notify";
+import { loadPref, savePref } from "../lib/prefs";
+import { loadSavedTrip, saveTrip } from "../lib/savedTrip";
+import { useOnline } from "./useOnline";
+import { useHeatmap, useTripPlan } from "./useTripPlan";
+
+export const LIVE_INTERVAL_MIN = 15;
+/** When the app returns to the foreground, re-check if the last update is older than this. */
+const LIVE_STALE_MS = 5 * 60_000;
+
+/** How the current plan came to be: typed in, refreshed by live mode, or reopened from the device. */
+export type PlanKind = "manual" | "recheck" | "restored";
+
+/**
+ * Everything about the driver's current trip that isn't layout:
+ * planning, live re-checks from GPS, risk alerts, offline persistence and connectivity.
+ */
+export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => void) {
+  const trip = useTripPlan();
+  const plan = trip.data;
+  const online = useOnline();
+
+  // Reopen the last trip so it's there with no signal (read once on startup).
+  const [saved] = useState(loadSavedTrip);
+  const restored = useRef(saved?.plan ?? null);
+  const heatPreset = useMemo(() => (saved?.heatmap ? { plan: saved.plan, heatmap: saved.heatmap } : null), [saved]);
+  const heat = useHeatmap(plan, heatPreset);
+
+  const [lastRequest, setLastRequest] = useState<PlanRequest | null>(saved?.request ?? null);
+  const [live, setLive] = useState(false);
+  const [alerts, setAlertsState] = useState(() => notificationsSupported() && loadPref("alerts", "0") === "1");
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [change, setChange] = useState<PlanChange | null>(null);
+  const [liveNote, setLiveNote] = useState<string | null>(null);
+  const recheckFrom = useRef<TripPlan | null>(null); // plan being re-checked; null for a manual plan
+
+  useEffect(() => {
+    if (saved) trip.restore(saved.plan);
+    // run once: restore the saved trip on startup
+  }, []);
+
+  const planTrip = useCallback(
+    (body: PlanRequest) => {
+      setLastRequest(body);
+      setChange(null);
+      setLiveNote(null);
+      recheckFrom.current = null;
+      trip.plan(body);
+    },
+    [trip.plan],
+  );
+
+  const recheck = useCallback(async () => {
+    if (!lastRequest || !plan || trip.loading || !navigator.onLine) return;
+    let origin = lastRequest.origin;
+    try {
+      origin = await getCurrentPlace("Current location");
+      setLiveNote(null);
+    } catch {
+      setLiveNote("GPS unavailable: refreshed forecasts from the original start instead.");
+    }
+    recheckFrom.current = plan;
+    trip.plan({ ...lastRequest, origin, departure_time: new Date().toISOString() });
+  }, [lastRequest, plan, trip.loading, trip.plan]);
+
+  const setAlerts = useCallback(async (on: boolean) => {
+    const granted = on ? await requestNotifications() : false;
+    setAlertsState(granted);
+    savePref("alerts", granted ? "1" : "0");
+    if (on && !granted) setLiveNote("Notifications are blocked. Allow them in your browser settings to get alerts.");
+  }, []);
+
+  // React to every new plan: work out its kind, compare with the previous one, alert if worse.
+  useEffect(() => {
+    if (!plan) return;
+    let kind: PlanKind = "manual";
+    if (plan === restored.current) {
+      kind = "restored";
+      setUpdatedAt(saved ? new Date(saved.savedAt) : null);
+    } else {
+      restored.current = null;
+      setUpdatedAt(new Date());
+      const previous = recheckFrom.current;
+      recheckFrom.current = null;
+      if (previous) {
+        kind = "recheck";
+        const diff = describeChange(previous, plan);
+        setChange(diff);
+        if (diff.tone === "worse" && alerts) notify("Weather ahead got worse", diff.text);
+      }
+    }
+    onNewPlan(plan, kind);
+    // Only react to a new plan.
+  }, [plan]);
+
+  // Persist new plans (and their heatmap once it arrives) for offline use.
+  useEffect(() => {
+    if (!plan || plan === restored.current) return;
+    saveTrip({ plan, request: lastRequest, heatmap: heat.data, savedAt: Date.now() });
+  }, [plan, heat.data]);
+
+  // Live timers call the latest `recheck` without being reset every render.
+  const recheckRef = useRef(recheck);
+  recheckRef.current = recheck;
+  const updatedRef = useRef(updatedAt);
+  updatedRef.current = updatedAt;
+
+  useEffect(() => {
+    if (!live) return;
+    recheckRef.current();
+    const id = window.setInterval(() => recheckRef.current(), LIVE_INTERVAL_MIN * 60_000);
+    // Phones pause timers in the background; catch up when the driver looks again or signal returns.
+    const catchUp = () => {
+      const last = updatedRef.current?.getTime() ?? 0;
+      if (document.visibilityState === "visible" && Date.now() - last > LIVE_STALE_MS) recheckRef.current();
+    };
+    document.addEventListener("visibilitychange", catchUp);
+    window.addEventListener("online", catchUp);
+    // Keep a mounted phone's screen on while live (best effort; unsupported browsers ignore it).
+    let lock: WakeLockSentinel | null = null;
+    navigator.wakeLock
+      ?.request("screen")
+      .then((l) => (lock = l))
+      .catch(() => {});
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", catchUp);
+      window.removeEventListener("online", catchUp);
+      lock?.release().catch(() => {});
+    };
+  }, [live]);
+
+  return {
+    plan,
+    heat,
+    loading: trip.loading,
+    error: trip.error,
+    online,
+    planTrip,
+    recheck,
+    live,
+    setLive,
+    alerts: notificationsSupported() ? alerts : null,
+    setAlerts,
+    updatedAt,
+    change,
+    liveNote,
+    /** Set while the plan on screen was reopened from the device rather than freshly planned. */
+    showingSaved: plan !== null && plan === restored.current,
+  };
+}

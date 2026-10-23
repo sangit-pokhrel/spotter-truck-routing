@@ -18,16 +18,17 @@ Built with **React + TypeScript** (frontend) and **Django + Django REST Framewor
 ## Contents
 
 1. [What it does](#what-it-does)
-2. [Using the app in your browser](#using-the-app-in-your-browser)
-3. [Running it locally](#running-it-locally)
-4. [How the system works](#how-the-system-works)
-5. [What's used (tech stack and services)](#whats-used)
-6. [Architecture and code layout](#architecture-and-code-layout)
-7. [API reference](#api-reference)
-8. [Testing](#testing)
-9. [Deployment](#deployment)
-10. [Requirements checklist](#requirements-checklist)
-11. [Assumptions, trade-offs and limitations](#assumptions-trade-offs-and-limitations)
+2. [Beyond the brief: what we added](#beyond-the-brief-what-we-added)
+3. [Using the app in your browser](#using-the-app-in-your-browser)
+4. [Running it locally](#running-it-locally)
+5. [How the system works](#how-the-system-works)
+6. [What's used (tech stack and services)](#whats-used)
+7. [Architecture and code layout](#architecture-and-code-layout)
+8. [API reference](#api-reference)
+9. [Testing](#testing)
+10. [Deployment](#deployment)
+11. [Requirements checklist](#requirements-checklist)
+12. [Assumptions, trade-offs and limitations](#assumptions-trade-offs-and-limitations)
 
 ---
 
@@ -61,6 +62,30 @@ Then the **load rules** are applied (they can only *raise* the risk):
 - Wind 45–54 mph with load **> 30,000 lb** → **No Travel**
 - Wind 35–44 mph with load **> 40,000 lb** → **Severe**
 
+**Load weight is part of every safety decision.** These rules run at **every checkpoint on every route** and in **every cell of the heatmap**. So the same weather can be High for a 35,000 lb load and Severe for a 45,000 lb one, and that changes the Severe/High miles, the ranking, and the recommended route. The thresholds are tested at their exact edges (30,000 vs 30,001 lb; 40,000 vs 40,001 lb), and each checkpoint explains itself, e.g. *"45,000 lb load in 40 mph wind (> 40,000 lb at 35–44 mph) → Severe"*.
+
+---
+
+## Beyond the brief: what we added
+
+The PDF asks for routes, weather sampling at the ETA, risk scoring, a recommendation, a map and a 0–48 h heatmap. All of that is done (see the [checklist](#requirements-checklist)). On top of it, built with the real user in mind (**a driver, usually on a phone, often with weak signal**):
+
+| Added | Why it matters for a driver | Where |
+|---|---|---|
+| **Live updates from GPS** | Weather moves. Every 15 minutes (and on returning to the app) it re-plans from the truck's position with fresh forecasts and says whether things ahead got **worse or better**. | `useTripSession.ts`, `live.ts` |
+| **Risk alerts (system notifications)** | With *Alert me* on, the phone shows a notification when the weather ahead gets worse, even while another app is in front. | `notify.ts`, `sw.js` |
+| **Pop-out map over other apps** | A mini map (real map tiles, risk-coloured route, truck, *"High in 24 mi at 15:10"*) floats over Google Maps or any other app using Picture-in-Picture. | `floating.ts` |
+| **Installable app (PWA)** | Add to home screen; opens full-screen with its own icon, like a native app. | `manifest.webmanifest`, `sw.js`, `pwa.ts` |
+| **Works offline** | With no signal, the app still opens and shows the **last trip** (routes, checkpoints, heatmap) and the map tiles already seen. Live updates pause and resume on reconnect. | `sw.js`, `savedTrip.ts`, `useOnline.ts` |
+| **Mobile-first, few steps** | Results lead with the recommendation, then the map and slider. The trip form collapses to one line. Finger-sized controls; *My location*; one-tap departure times; load and interval remembered. | `styles.css`, `TripForm.tsx` |
+| **Weather along the route strip** | The selected route as a risk-coloured bar by mile with hour ticks; touch it to see weather at that spot, synced with the map. | `RouteProfile.tsx` |
+| **Explainable ranking** | A comparison table in ranking order with each row's winner highlighted, plus a sentence naming the deciding criterion. | `RouteComparison.tsx`, `recommendation.py` |
+| **Truck-realistic ETAs** | Per-road-segment travel times with a 65 mph truck speed cap, not one average speed. | `routing.py` |
+| **Better route alternatives** | Via-point alternatives, filtered for duplicates, absurd detours and out-and-back "spurs". | `routing.py` |
+| **Rate-limit resilience** | When Open-Meteo throttles the server's shared IP, the browser fetches the forecast with its own quota while the server keeps all the logic. Circuit breaker, caching, retries. | `weather.py`, `client.ts` |
+| **"No Travel" ranked first** | A route you can't safely drive never wins just because it has fewer Severe miles. | `recommendation.py` |
+| **Light / dark / satellite maps** | Dark for night driving, satellite for terrain. | `basemaps.ts` |
+
 ---
 
 ## Using the app in your browser
@@ -89,7 +114,19 @@ Open **[spotter-truck-routing-15e6.onrender.com](https://spotter-truck-routing-1
 - **Compare routes:** the three routes side by side, in the same order they're ranked. The best value in each row is highlighted.
 - **Checkpoints:** the full table for the selected route. Tap a row to jump to it on the map.
 
-**While driving:** turn on **Live updates**. The app re-checks from your GPS position every 15 minutes, and immediately when you come back to the app after 5+ minutes away. It keeps the screen awake where the browser supports it. A banner tells you if the weather ahead got worse or better. **Re-check now** does it on demand.
+**While driving**
+
+- **Live updates:** re-checks from your GPS position every 15 minutes, and immediately when you come back to the app after 5+ minutes away. It keeps the screen awake where the browser supports it, and a banner tells you if the weather ahead got worse or better. **Re-check now** does it on demand.
+- **Alert me:** allow notifications and the phone alerts you when the weather ahead gets worse.
+- **Pop-out map:** floats a mini map with the next hazard over other apps, so you can keep Google Maps or your dispatch app in front. Supported in Chrome on Android and desktop, Edge, and Safari on macOS.
+
+**Install it like an app**
+
+- **Android (Chrome):** tap **Install app** in the top bar (or ⋮ → *Install app*).
+- **iPhone (Safari):** Share → *Add to Home Screen*. Notifications on iPhone need the installed app (iOS 16.4+).
+- **Desktop (Chrome/Edge):** the install icon in the address bar, or **Install app**.
+
+**No signal?** The app still opens and shows your last trip (routes, checkpoints, heatmap and the map areas you've viewed), with a banner saying it's offline. Planning a new trip needs a connection; live updates resume automatically when you're back online.
 
 ---
 
@@ -256,6 +293,36 @@ Weather moves, so a plan made at departure goes stale. With **Live updates** on,
 
 If GPS is unavailable, it refreshes the forecasts from the original start and says so.
 
+### 8. Installable app and offline mode
+
+- **Web App Manifest** (`manifest.webmanifest`): name, icons (including a maskable icon for Android) and theme colour, opening `standalone` so it looks like a native app.
+- **Service worker** (`public/sw.js`), only in production builds:
+
+  | Request | Strategy |
+  |---|---|
+  | The page | network first, cached copy when offline |
+  | Hashed `/assets/*` | cache first (names change whenever content changes) |
+  | Esri map tiles | cache first, capped at 800 tiles; Esri sends CORS headers, so tiles are cached as real responses rather than opaque ones |
+  | Fonts | stale-while-revalidate |
+  | `/api/*` | never cached by the worker |
+
+- **First visit:** the page sends the worker the asset URLs it already loaded, so offline works from the very first visit.
+- **The trip itself** (plan, request and heatmap, about 250 KB) is saved in `localStorage` after every plan and restored on startup, for up to 3 days. A banner says whether you're seeing a saved trip or are offline.
+
+### 9. Risk alerts
+
+When a live re-check finds the weather ahead got worse and **Alert me** is on, the app shows a system notification through the service worker.
+- Alerts use one `tag`, so a new alert replaces the previous one instead of stacking.
+- Tapping the notification brings the app back to the front.
+- No account or push server is needed. See the [limitations](#assumptions-trade-offs-and-limitations) for alerts while the app is fully closed.
+
+### 10. Pop-out map
+
+Browsers can't draw over other apps directly, but a `<video>` can go **Picture-in-Picture**. `floating.ts` does the rest:
+- It paints a 480×270 canvas every second: real basemap tiles (CORS), the risk-coloured route, the truck at its current position, a header with the **next hazard ahead** ("High in 24 mi, at 15:10, Rain 0.31 in/hr"), and a progress strip.
+- It streams the canvas into a hidden video (`canvas.captureStream`) and floats that video.
+- The truck position comes from the plan's checkpoint ETAs. In live mode the plan starts at the GPS position, so it tracks the real truck.
+
 ### Weather and the free-tier rate limit
 
 Open-Meteo's free tier limits requests **per IP address**, and free cloud hosts (including Render) share outbound IPs between many apps, which quickly exhausts the limit. The system handles this without paid keys:
@@ -283,6 +350,8 @@ Open-Meteo's free tier limits requests **per IP address**, and free cloud hosts 
 | **Esri tiles** | Light, dark and satellite base maps, keyless and CDN-backed |
 | **IBM Plex Sans / Mono** | Type; tabular numbers for times and distances |
 | **Vitest** | Unit tests for the pure helpers |
+| **Service Worker + Web App Manifest** | Installable PWA, offline app shell and tile cache |
+| **Browser APIs** | Geolocation (GPS), Notifications, Picture-in-Picture + `canvas.captureStream` (pop-out map), Screen Wake Lock, `localStorage` (saved trip) |
 
 ### Backend
 
@@ -336,10 +405,20 @@ frontend/                      React + TypeScript + Leaflet (Vite)
   src/
     App.tsx                    layout and state wiring (incl. live mode)
     api/                       typed client (+ browser weather fetch) and response types
-    hooks/                     useTripPlan / useHeatmap (abortable, race-safe), useMediaQuery
-    lib/                       pure helpers: risk colours, heatmap rasteriser, geo, live-change detection
+    hooks/
+      useTripSession.ts        the trip: planning, live re-checks, alerts, saved trip, online state
+      useTripPlan.ts           useTripPlan / useHeatmap (abortable, race-safe)
+      useMediaQuery.ts, useOnline.ts
+    lib/
+      risk.ts, heatmapImage.ts, geo.ts      colours, heatmap rasteriser, route geometry
+      live.ts                  change detection, miles driven, next hazard ahead
+      floating.ts              Picture-in-Picture mini map
+      savedTrip.ts, pwa.ts, notify.ts, location.ts, prefs.ts, basemaps.ts
     components/                TripForm, TripSummary, LiveBar, RouteComparison, RouteProfile,
                                MapView, ForecastBar, CheckpointList, ...
+  public/
+    sw.js                      service worker (offline shell, tile cache, notification clicks)
+    manifest.webmanifest, icons/
     styles.css                 one stylesheet; desktop, tablet and phone layouts
 
 Dockerfile                     Node build stage → Python image serving API + SPA
@@ -389,7 +468,7 @@ Example `POST /api/plan/` body:
 
 ```bash
 cd backend && pytest            # 80 tests
-cd frontend && npm test         # 10 tests
+cd frontend && npm test         # 17 tests
 cd frontend && npm run typecheck
 ```
 
@@ -401,7 +480,7 @@ What's covered:
 - **Providers (HTTP mocked):** OSRM parsing and the truck speed cap, via-point alternatives, spur rejection, Open-Meteo unit conversion, batching and caching.
 - **Browser weather fallback:** client/auto/server modes, the circuit breaker, validation of browser-supplied data, cache I/O errors treated as misses.
 - **API:** validation errors, geocoding free text, 502 on provider failure, the weather-request handshake.
-- **Frontend:** heatmap colour scales and rasteriser, truck position along the route, live-update change detection.
+- **Frontend:** heatmap colour scales and rasteriser, truck position along the route, live-update change detection, next hazard ahead and miles driven, saved-trip round-trip and expiry, map tile projection.
 
 ---
 
@@ -457,4 +536,7 @@ docker run -p 8000:8000 -e DJANGO_SECRET_KEY=... -e DJANGO_ALLOWED_HOSTS=your.do
 - **No hours-of-service breaks** are added, so ETAs on trips with more than ~11 hours of driving are optimistic. Live updates correct ETAs as the trip progresses.
 - **Weather comes from the forecast hour nearest the ETA.** Times beyond Open-Meteo's ~15-day horizon show as "No data", and those miles are reported separately rather than counted as Low.
 - **The heatmap slider covers 0–48 h after the chosen departure** (not after "now"), so it lines up with the truck's journey.
+- **Alerts need the app open or recently used.** Notifications come from live mode in the app itself, including while another app is in front. Alerts with the app *fully closed* need server push, i.e. a backend that re-checks saved trips on a schedule and sends Web Push or Firebase Cloud Messaging. That needs a server that can fetch weather (an `OPEN_METEO_API_KEY`, since Render's shared IPs are rate-limited) plus a scheduler. It's the natural next step; the comparison logic (`describeChange`) would be reused as is.
+- **Pop-out map support depends on the browser:** Chrome (Android and desktop), Edge, and Safari on macOS. On iPhone, Picture-in-Picture of a canvas stream isn't reliable, so the button is hidden where unsupported.
+- **Offline mode shows saved data;** it can't fetch new forecasts without a connection. The banner shows when the data was saved.
 - **The public routing, geocoding and weather services are fair-use.** Heavy use should move to self-hosted or keyed endpoints (see [Scaling notes](#deployment)).

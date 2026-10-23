@@ -210,12 +210,12 @@ export function MapView({ plan, selectedId, onSelectRoute, heat, truck, hoverPoi
 
   return (
     <MapContainer center={US_CENTER} zoom={4} zoomSnap={0.25} preferCanvas className={`map map-${basemap}`} zoomControl>
-      <TileLayer key={tiles.id} attribution={tiles.attribution} url={tiles.base} maxZoom={16} />
+      <TileLayer key={tiles.id} attribution={tiles.attribution} url={tiles.base} maxZoom={16} crossOrigin="anonymous" />
       <Pane name="heatmap" style={{ zIndex: 350 }}>
         {heat && <ImageOverlay url={heat.url} bounds={heat.bounds} opacity={0.85} className="heat-image" />}
       </Pane>
       <Pane name="labels" style={{ zIndex: 450, pointerEvents: "none" }}>
-        <TileLayer key={`${tiles.id}-labels`} url={tiles.labels} maxZoom={16} />
+        <TileLayer key={`${tiles.id}-labels`} url={tiles.labels} maxZoom={16} crossOrigin="anonymous" />
       </Pane>
 
       {others.map((r) => (

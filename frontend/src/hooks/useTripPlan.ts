@@ -27,16 +27,27 @@ export function useTripPlan() {
     }
   }, []);
 
+  /** Show a previously saved plan without touching the network (offline / reopened app). */
+  const restore = useCallback((data: TripPlan) => {
+    controller.current?.abort();
+    setState({ data, loading: false, error: null });
+  }, []);
+
   useEffect(() => () => controller.current?.abort(), []);
-  return { ...state, plan };
+  return { ...state, plan, restore };
 }
 
-/** Loads the corridor heatmap after a plan arrives (routes render first, heatmap streams in). */
-export function useHeatmap(plan: TripPlan | null) {
+/** Loads the corridor heatmap after a plan arrives (routes render first, heatmap streams in).
+ *  `preset` supplies an already-known heatmap for that exact plan (restored from the device). */
+export function useHeatmap(plan: TripPlan | null, preset: { plan: TripPlan; heatmap: Heatmap } | null = null) {
   const [state, setState] = useState<AsyncState<Heatmap>>({ data: null, loading: false, error: null });
 
   useEffect(() => {
     if (!plan) return;
+    if (preset && preset.plan === plan) {
+      setState({ data: preset.heatmap, loading: false, error: null });
+      return;
+    }
     const ctrl = new AbortController();
     setState({ data: null, loading: true, error: null });
     api
@@ -46,6 +57,7 @@ export function useHeatmap(plan: TripPlan | null) {
         if (err.name !== "AbortError") setState({ data: null, loading: false, error: err.message });
       });
     return () => ctrl.abort();
+    // `preset` only matters when the plan changes.
   }, [plan]);
 
   return state;

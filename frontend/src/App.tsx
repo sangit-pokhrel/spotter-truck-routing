@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HeatMetric, PlanRequest, TripPlan } from "./api/types";
+import type { HeatMetric, TripPlan } from "./api/types";
 import { CheckpointList } from "./components/CheckpointList";
 import { ForecastBar } from "./components/ForecastBar";
 import { LiveBar } from "./components/LiveBar";
@@ -9,23 +9,16 @@ import { RouteProfile } from "./components/RouteProfile";
 import { TripForm } from "./components/TripForm";
 import { TripSummary } from "./components/TripSummary";
 import { COMPACT_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
-import { useHeatmap, useTripPlan } from "./hooks/useTripPlan";
+import { LIVE_INTERVAL_MIN, useTripSession, type PlanKind } from "./hooks/useTripSession";
 import { BASEMAPS, loadBasemap, saveBasemap, type BasemapId } from "./lib/basemaps";
+import { FloatingView, floatingSupported } from "./lib/floating";
+import { formatEta } from "./lib/format";
 import { pointAtMile, routePath, truckPosition } from "./lib/geo";
 import { renderFrames } from "./lib/heatmapImage";
-import { describeChange, type PlanChange } from "./lib/live";
-import { getCurrentPlace } from "./lib/location";
+import { canInstall, onInstallAvailabilityChange, promptInstall } from "./lib/pwa";
 import { ROUTE_COLORS } from "./lib/risk";
 
-const LIVE_INTERVAL_MIN = 15;
-/** When the app returns to the foreground, re-check if the last update is older than this. */
-const LIVE_STALE_MS = 5 * 60_000;
-
 export default function App() {
-  const trip = useTripPlan();
-  const plan = trip.data;
-  const heat = useHeatmap(plan);
-
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [metric, setMetric] = useState<HeatMetric>("risk");
   const [hour, setHour] = useState(0);
@@ -36,85 +29,21 @@ export default function App() {
   const [editing, setEditing] = useState(true);
   const compact = useMediaQuery(COMPACT_QUERY);
 
-  // --- Live mode: re-plan from the truck's position so the risk ahead reflects current forecasts.
-  const [lastRequest, setLastRequest] = useState<PlanRequest | null>(null);
-  const [live, setLive] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-  const [change, setChange] = useState<PlanChange | null>(null);
-  const [liveNote, setLiveNote] = useState<string | null>(null);
-  const recheckFrom = useRef<TripPlan | null>(null); // plan being re-checked; null for a manual plan
-
-  const planTrip = useCallback(
-    (body: PlanRequest) => {
-      setLastRequest(body);
-      setChange(null);
-      setLiveNote(null);
-      recheckFrom.current = null;
-      trip.plan(body);
+  const onNewPlan = useCallback(
+    (plan: TripPlan, kind: PlanKind) => {
+      setSelectedId(plan.recommended_route);
+      setHour(0);
+      setFocused(null);
+      setHoveredMile(null);
+      if (kind === "recheck") return; // live refresh: don't collapse or scroll the driver's view
+      setEditing(false);
+      // Phones: the map moves to the top once there are results; bring it into view.
+      if (kind === "manual" && compact) window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [trip.plan],
+    [compact],
   );
-
-  const recheck = useCallback(async () => {
-    if (!lastRequest || !plan || trip.loading) return;
-    let origin = lastRequest.origin;
-    try {
-      origin = await getCurrentPlace("Current location");
-      setLiveNote(null);
-    } catch {
-      setLiveNote("GPS unavailable: refreshed forecasts from the original start instead.");
-    }
-    recheckFrom.current = plan;
-    trip.plan({ ...lastRequest, origin, departure_time: new Date().toISOString() });
-  }, [lastRequest, plan, trip.loading, trip.plan]);
-
-  // Timers call the latest `recheck` without being reset every render.
-  const recheckRef = useRef(recheck);
-  recheckRef.current = recheck;
-  const updatedRef = useRef(updatedAt);
-  updatedRef.current = updatedAt;
-
-  useEffect(() => {
-    if (!live) return;
-    recheckRef.current();
-    const id = window.setInterval(() => recheckRef.current(), LIVE_INTERVAL_MIN * 60_000);
-    // Phones pause timers in the background; catch up when the driver looks again.
-    const onVisible = () => {
-      const last = updatedRef.current?.getTime() ?? 0;
-      if (document.visibilityState === "visible" && Date.now() - last > LIVE_STALE_MS) recheckRef.current();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    // Keep a mounted phone's screen on while live (best effort; unsupported browsers ignore it).
-    let lock: WakeLockSentinel | null = null;
-    navigator.wakeLock
-      ?.request("screen")
-      .then((l) => (lock = l))
-      .catch(() => {});
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-      lock?.release().catch(() => {});
-    };
-  }, [live]);
-
-  useEffect(() => {
-    setSelectedId(plan?.recommended_route ?? null);
-    setHour(0);
-    setFocused(null);
-    setHoveredMile(null);
-    if (!plan) return;
-    setUpdatedAt(new Date());
-    const previous = recheckFrom.current;
-    recheckFrom.current = null;
-    if (previous) {
-      setChange(describeChange(previous, plan));
-      return; // live refresh: don't collapse/scroll the driver's view
-    }
-    setEditing(false);
-    // Phones: the map moves to the top once there are results; bring it into view.
-    if (compact) window.scrollTo({ top: 0, behavior: "smooth" });
-    // Only react to a new plan (not to viewport changes).
-  }, [plan]);
+  const session = useTripSession(onNewPlan);
+  const { plan, heat } = session;
 
   // Frames are rendered once per (heatmap, metric) and reused while scrubbing.
   const frameCache = useMemo(() => new Map<HeatMetric, string[]>(), [heat.data]);
@@ -143,6 +72,37 @@ export default function App() {
     saveBasemap(id);
   };
 
+  // --- Floating mini map (Picture-in-Picture over other apps)
+  const floating = useRef<FloatingView | null>(null);
+  const [floatingOpen, setFloatingOpen] = useState(false);
+  const toggleFloating = async () => {
+    if (floating.current) {
+      await floating.current.close();
+      return;
+    }
+    if (!plan || !selected) return;
+    const view = new FloatingView();
+    view.onClose = () => {
+      floating.current = null;
+      setFloatingOpen(false);
+    };
+    floating.current = view;
+    setFloatingOpen(true);
+    try {
+      await view.open({ plan, route: selected, basemap });
+    } catch {
+      await view.close();
+    }
+  };
+  useEffect(() => {
+    if (floating.current && plan && selected) floating.current.update({ plan, route: selected, basemap });
+  }, [plan, selected, basemap]);
+  useEffect(() => () => void floating.current?.close(), []);
+
+  // --- "Install app" button when the browser offers it
+  const [installable, setInstallable] = useState(canInstall);
+  useEffect(() => onInstallAvailabilityChange(() => setInstallable(canInstall())), []);
+
   return (
     <div className="app">
       <header className="topbar">
@@ -154,11 +114,31 @@ export default function App() {
         <h1>Weather-Aware Truck Routing</h1>
         <span className="topbar-sub">Route risk from forecast weather at your ETA</span>
         <nav className="topbar-meta">
-          <span>OSRM</span>
-          <span>Open-Meteo</span>
-          <span>Photon</span>
+          {installable && (
+            <button type="button" className="install-btn" onClick={promptInstall}>
+              Install app
+            </button>
+          )}
+          <span className="meta-sources">OSRM · Open-Meteo · Photon</span>
         </nav>
       </header>
+
+      {!session.online && (
+        <div className="offline-bar" role="status">
+          <b>Offline.</b>{" "}
+          {plan
+            ? `Showing your saved trip${session.updatedAt ? ` from ${formatEta(session.updatedAt.toISOString())}` : ""}. Live updates resume when you're back online.`
+            : "Planning needs a connection. Your last trip will appear here once you've planned one."}
+        </div>
+      )}
+      {session.online && session.showingSaved && (
+        <div className="saved-bar" role="status">
+          Showing your last trip, saved {session.updatedAt ? formatEta(session.updatedAt.toISOString()) : "earlier"}.{" "}
+          <button type="button" className="link-btn" onClick={session.recheck} disabled={session.loading}>
+            Refresh forecasts
+          </button>
+        </div>
+      )}
 
       <div className={`workspace${plan ? " has-plan" : ""}`}>
         <aside className="panel">
@@ -167,14 +147,17 @@ export default function App() {
               <>
                 <TripSummary plan={plan} onEdit={() => setEditing(true)} />
                 <LiveBar
-                  live={live}
-                  onToggle={setLive}
-                  onRecheck={recheck}
-                  busy={trip.loading}
-                  updatedAt={updatedAt}
+                  live={session.live}
+                  onToggle={session.setLive}
+                  onRecheck={session.recheck}
+                  busy={session.loading}
+                  offline={!session.online}
+                  updatedAt={session.updatedAt}
                   intervalMin={LIVE_INTERVAL_MIN}
-                  change={change}
-                  note={liveNote}
+                  change={session.change}
+                  note={session.liveNote}
+                  alerts={session.alerts}
+                  onAlerts={session.setAlerts}
                 />
               </>
             )}
@@ -188,11 +171,11 @@ export default function App() {
                   </button>
                 )}
               </h2>
-              <TripForm loading={trip.loading} onSubmit={planTrip} />
+              <TripForm loading={session.loading} onSubmit={session.planTrip} />
             </div>
-            {trip.error && (
+            {session.error && (
               <p className="alert" role="alert">
-                {trip.error}
+                {session.error}
               </p>
             )}
           </section>
@@ -239,7 +222,7 @@ export default function App() {
             </>
           )}
 
-          {!plan && !trip.loading && (
+          {!plan && !session.loading && (
             <section className="section intro s-intro">
               <h2 className="section-title">How it works</h2>
               <ol>
@@ -280,14 +263,25 @@ export default function App() {
                   Fit routes
                 </button>
               )}
+              {plan && floatingSupported() && (
+                <button
+                  type="button"
+                  className={`map-btn${floatingOpen ? " on" : ""}`}
+                  onClick={toggleFloating}
+                  title="Float a mini map over other apps"
+                  aria-pressed={floatingOpen}
+                >
+                  {floatingOpen ? "Close pop-out" : "Pop-out map"}
+                </button>
+              )}
             </div>
-            {trip.loading && (
+            {session.loading && (
               <div className="map-status" role="status">
                 <span className="progress" aria-hidden />
                 Routing and checking forecasts at every checkpoint…
               </div>
             )}
-            {!plan && !trip.loading && <div className="map-empty">Plan a trip to compare routes by weather risk</div>}
+            {!plan && !session.loading && <div className="map-empty">Plan a trip to compare routes by weather risk</div>}
           </div>
 
           {plan && selected && (
