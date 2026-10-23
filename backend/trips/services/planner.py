@@ -35,6 +35,7 @@ class Checkpoint:
     point: LatLon
     hours: float  # hours after departure
     speed_limit_mph: float | None = None  # posted limit where the checkpoint sits, when known
+    truck_limit_mph: float | None = None  # state truck limit there (e.g. CA 55), when one applies
     covers: tuple[float, float] = (0.0, 0.0)  # mile range this checkpoint represents
     weather: WeatherSample | None = None
     risk: RiskAssessment | None = None
@@ -76,7 +77,10 @@ def build_checkpoints(route: Route, interval_mi: float) -> list[Checkpoint]:
         point, idx, frac = interpolate(route.points, cum_mi, mile)
         hours = cum_h[idx] + route.seg_hours[idx] * frac if route.seg_hours else 0.0
         limit = route.seg_limits[idx] if route.seg_limits else None
-        checkpoints.append(Checkpoint(mile=mile, point=point, hours=hours, speed_limit_mph=limit))
+        truck_limit = route.seg_truck_limits[idx] if route.seg_truck_limits else None
+        checkpoints.append(
+            Checkpoint(mile=mile, point=point, hours=hours, speed_limit_mph=limit, truck_limit_mph=truck_limit)
+        )
 
     for i, cp in enumerate(checkpoints):
         lo = 0.0 if i == 0 else (checkpoints[i - 1].mile + cp.mile) / 2
@@ -174,6 +178,7 @@ def _checkpoint_json(cp: Checkpoint, departure: datetime) -> dict:
         "lon": round(cp.point[1], 5),
         "eta": (departure + timedelta(hours=cp.hours)).isoformat(),
         "speed_limit_mph": cp.speed_limit_mph,
+        "truck_limit_mph": cp.truck_limit_mph,
         "hours_from_departure": round(cp.hours, 3),
         "coverage_mi": round(cp.coverage_mi, 2),
         "level": r.level.key if r else "unknown",

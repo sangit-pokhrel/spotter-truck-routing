@@ -13,6 +13,19 @@ function num(v: number | null, digits: number): string {
   return v === null ? "–" : v.toFixed(digits);
 }
 
+/** The limit a truck must obey: the posted limit, or a lower state truck limit (marked). */
+function TruckLimit({ cp }: { cp: Checkpoint }) {
+  const truck = cp.truck_limit_mph;
+  if (truck !== null && (cp.speed_limit_mph === null || truck < cp.speed_limit_mph)) {
+    return (
+      <span className="truck-limit" title={`State truck limit${cp.speed_limit_mph ? ` (posted ${cp.speed_limit_mph})` : ""}`}>
+        {truck} <small>truck</small>
+      </span>
+    );
+  }
+  return <>{num(cp.speed_limit_mph, 0)}</>;
+}
+
 export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocus, onHover }: Props) {
   return (
     <div className="cp-wrap" onMouseLeave={() => onHover(null)}>
@@ -21,7 +34,7 @@ export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocu
           <tr>
             <th scope="col">Mile</th>
             <th scope="col">ETA</th>
-            <th scope="col" className="num" title="Posted speed limit, mph">
+            <th scope="col" className="num" title="Speed limit for trucks, mph (posted, or a lower state truck limit)">
               Limit
             </th>
             <th scope="col" className="num" title="Sustained wind, mph">
@@ -48,7 +61,9 @@ export const CheckpointList = memo(function CheckpointList({ checkpoints, onFocu
             >
               <td className="num">{Math.round(cp.mile)}</td>
               <td>{formatEta(cp.eta)}</td>
-              <td className="num">{num(cp.speed_limit_mph, 0)}</td>
+              <td className="num">
+                <TruckLimit cp={cp} />
+              </td>
               <td className="num">{num(cp.wind_mph, 0)}</td>
               <td className="num">{num(cp.rain_in_hr, 2)}</td>
               <td className="num">{num(cp.snow_in_hr, 2)}</td>

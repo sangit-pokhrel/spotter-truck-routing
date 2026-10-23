@@ -14,6 +14,9 @@ export function CheckpointDetails({ cp, routeName }: { cp: Checkpoint; routeName
       <div className="cp-details-eta">
         ETA {formatEta(cp.eta)}
         {cp.speed_limit_mph !== null && ` · limit ${cp.speed_limit_mph} mph`}
+        {cp.truck_limit_mph !== null &&
+          (cp.speed_limit_mph === null || cp.truck_limit_mph < cp.speed_limit_mph) &&
+          ` · trucks ${cp.truck_limit_mph} mph (state law)`}
       </div>
       {cp.wind_mph !== null && (
         <dl>

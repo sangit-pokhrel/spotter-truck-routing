@@ -11,6 +11,10 @@ segment as a truck would drive it:
   the posted limit or the governed speed;
 * no limit known: OSRM's estimate capped at the governed speed.
 
+On top of that, **state truck speed limits** (e.g. California's 55 mph for trucks, statewide by
+statute, see truck_rules.py) lower the cap for every segment in those states, whether or not
+the posted limit is known.
+
 Speed and politeness
 --------------------
 The public Valhalla server allows ~1 request/s and ≤ 200 km per request, so a long trip needs
@@ -41,6 +45,7 @@ from django.core.cache import cache
 from .geo import cumulative, haversine_mi, interpolate
 from .http import ProviderError, RateLimited, post_json
 from .routing import Route
+from .truck_rules import segment_rules
 
 logger = logging.getLogger(__name__)
 
@@ -259,19 +264,22 @@ def _start(jobs: list[tuple], wait: bool) -> bool:
 
 
 def apply_known_limits(route: Route, known: list[Known | None], governed_mph: float) -> float:
-    """Set route.seg_limits / seg_hours from known limits; returns the share of miles looked up."""
+    """Set route.seg_limits / seg_truck_limits / seg_hours; returns the share of miles looked up."""
     if route.osrm_hours is None:
         return 0.0
+    rules = segment_rules(route.points)
     limits: list[float | None] = []
     hours: list[float] = []
     looked_up = 0.0
-    for miles, osrm_h, k in zip(route.seg_miles, route.osrm_hours, known):
+    for miles, osrm_h, k, rule in zip(route.seg_miles, route.osrm_hours, known, rules):
         limit, road_class = k if k else (None, None)
         if k is not None:
             looked_up += miles
+        cap = min(governed_mph, rule.limit_mph) if rule else governed_mph  # state truck limit
         limits.append(limit or None)
-        hours.append(truck_hours(miles, osrm_h, limit or None, road_class, governed_mph))
+        hours.append(truck_hours(miles, osrm_h, limit or None, road_class, cap))
     route.seg_limits = limits
+    route.seg_truck_limits = [rule.limit_mph if rule else None for rule in rules]
     route.seg_hours = hours
     return looked_up / route.distance_mi if route.distance_mi else 0.0
 
@@ -283,7 +291,12 @@ def enrich_routes(routes: list[Route], wait: bool = False) -> str:
     plan uses whatever is already known.
     """
     cfg = settings.TRUCK_ROUTING
-    if not cfg["SPEED_LIMITS_ENABLED"] or not routes:
+    if not routes:
+        return DISABLED
+    if not cfg["SPEED_LIMITS_ENABLED"]:
+        # Posted limits off: state truck limits still apply on top of the governed-speed cap.
+        for r in routes:
+            apply_known_limits(r, [None] * len(r.seg_miles), cfg["TRUCK_MAX_SPEED_MPH"])
         return DISABLED
     known = [_known(r) for r in routes]
     jobs = [job for r, k in zip(routes, known) for job in _missing_jobs(r, k)]

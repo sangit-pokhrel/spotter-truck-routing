@@ -44,6 +44,7 @@ class Route:
     via_mile: float | None = None  # where the forced via-point sits, for via-routes
     osrm_hours: list[float] | None = None  # OSRM's own (car-profile) estimate, before truck rules
     seg_limits: list[float | None] | None = None  # posted speed limit per segment, mph, when known
+    seg_truck_limits: list[float | None] | None = None  # state truck speed limit per segment (e.g. CA 55)
 
     @property
     def distance_mi(self) -> float:

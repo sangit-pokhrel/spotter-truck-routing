@@ -14,6 +14,8 @@ export interface Checkpoint {
   hours_from_departure: number;
   /** Posted limit at this checkpoint (mph), when known. */
   speed_limit_mph: number | null;
+  /** State truck limit here (e.g. California 55), when one applies. */
+  truck_limit_mph: number | null;
   coverage_mi: number;
   level: RiskKey;
   wind_mph: number | null;

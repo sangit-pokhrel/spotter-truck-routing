@@ -68,23 +68,60 @@ Then the **load rules** are applied. The mph here is **wind speed**, not driving
 
 ## Beyond the brief: what we added
 
-The PDF asks for routes, weather sampling at the ETA, risk scoring, a recommendation, a map and a 0–48 h heatmap. All of that is done (see the [checklist](#requirements-checklist)). On top of it, built with the real user in mind (**a driver, usually on a phone, often with weak signal**):
+The PDF asks for: three routes from a routing API, weather sampled every 10/25/50 miles at the truck's ETA, risk from the table and load rules, a recommendation (Severe → High → average risk → time), routes/checkpoints/risk/ETAs/summaries on a map, and a corridor heatmap with a 0–48 h slider. **All of that is done**; see the [checklist](#requirements-checklist).
 
-| Added | Why it matters for a driver | Where |
+Everything below goes **beyond the brief**. It was built around the real user: **a truck driver, usually on a phone, often with weak signal, whose weather changes while they drive.**
+
+### Safer, more realistic risk and timing
+
+| Added | What it does | Where |
 |---|---|---|
-| **Live updates from GPS** | Weather moves. Every 15 minutes (and on returning to the app) it re-plans from the truck's position with fresh forecasts and says whether things ahead got **worse or better**. | `useTripSession.ts`, `live.ts` |
-| **Risk alerts (system notifications)** | With *Alert me* on, the phone shows a notification when the weather ahead gets worse, even while another app is in front. | `notify.ts`, `sw.js` |
-| **Pop-out map over other apps** | A mini map (real map tiles, risk-coloured route, truck, *"High in 24 mi at 15:10"*) floats over Google Maps or any other app using Picture-in-Picture. | `floating.ts` |
+| **Posted speed limits in ETAs** | Each route is checked against real posted limits (OpenStreetMap via Valhalla, ~98–100% coverage on interstates). Highways are driven at the lower of the posted limit and the truck's governed speed (65 mph default), and other roads never above their limit. On Denver→Chicago this moved the ETA by ~2 h versus a flat cap, which changes which forecast hour each checkpoint is checked against. | `speed_limits.py` |
+| **State truck speed limits** | States like **California (55 mph)**, **Oregon (55)** and **Washington (60)** cap trucks below the posted limit statewide, by law. Each road segment is placed in its state (Census boundaries) and capped accordingly, with statute citations in the rule table. Works even when posted-limit lookups are unavailable. | `truck_rules.py`, `data/state_boundaries.json` |
+| **Truck speed cap** | A loaded truck never drives faster than its governed speed (`TRUCK_MAX_SPEED_MPH`). | `routing.py`, `speed_limits.py` |
+| **"No Travel" ranked first** | The brief doesn't rank No Travel; a route you can't safely drive should never win just because it has fewer Severe miles. | `recommendation.py` |
+| **Mileage-true risk** | Each checkpoint represents the road halfway to its neighbours, so "Severe miles" is real road distance, including a short final interval. | `planner.py` |
+| **Explained risk** | Every checkpoint says *why*: *"45,000 lb load in 40 mph wind (> 40,000 lb at 35–44 mph) → Severe"*. The recommendation names the deciding criterion. | `risk.py`, `recommendation.py` |
+| **Better route alternatives** | OSRM returns only 1–2 routes, so via-point alternatives are generated and filtered for near-duplicates, absurd detours and out-and-back "spurs" (a local-optimality check). | `routing.py` |
+| **Precise risk boundaries** | Band edges follow the table exactly (`≥ 55` for wind but `> 1.00` / `> 3.0` for rain and snow; 30,000 vs 30,001 lb), and all are tested. | `risk.py`, tests |
+
+### Built for drivers on the road
+
+| Added | What it does | Where |
+|---|---|---|
+| **Live updates from GPS** | Every 15 minutes (and when you come back to the app) it re-plans from the truck's position with fresh forecasts, then shows whether conditions ahead got **worse or better**. It keeps the screen awake while driving. | `useTripSession.ts`, `live.ts` |
+| **Risk alerts** | With *Alert me* on, the phone gets a system notification when the weather ahead gets worse; tapping it opens the app. | `notify.ts`, `sw.js` |
+| **Pop-out map over other apps** | A mini map floats over Google Maps or any other app (Picture-in-Picture), with real map tiles, the risk-coloured route, the truck, and the next hazard, e.g. *"High in 24 mi, at 15:10"*. | `floating.ts` |
 | **Installable app (PWA)** | Add to home screen; opens full-screen with its own icon, like a native app. | `manifest.webmanifest`, `sw.js`, `pwa.ts` |
-| **Works offline** | With no signal, the app still opens and shows the **last trip** (routes, checkpoints, heatmap) and the map tiles already seen. Live updates pause and resume on reconnect. | `sw.js`, `savedTrip.ts`, `useOnline.ts` |
-| **Mobile-first, few steps** | Results lead with the recommendation, then the map and slider. The trip form collapses to one line. Finger-sized controls; *My location*; one-tap departure times; load and interval remembered. | `styles.css`, `TripForm.tsx` |
-| **Weather along the route strip** | The selected route as a risk-coloured bar by mile with hour ticks; touch it to see weather at that spot, synced with the map. | `RouteProfile.tsx` |
-| **Explainable ranking** | A comparison table in ranking order with each row's winner highlighted, plus a sentence naming the deciding criterion. | `RouteComparison.tsx`, `recommendation.py` |
-| **Posted speed limits in ETAs** | Every route is checked against real posted limits (OpenStreetMap via Valhalla). Trucks drive highways at the lower of the posted limit and their governed speed, and never exceed a limit elsewhere. On Denver→Chicago this moved the ETA by ~2 h versus a flat cap, which changes which forecast hour each checkpoint gets. Limits show at every checkpoint. | `speed_limits.py` |
-| **Better route alternatives** | Via-point alternatives, filtered for duplicates, absurd detours and out-and-back "spurs". | `routing.py` |
-| **Rate-limit resilience** | When Open-Meteo throttles the server's shared IP, the browser fetches the forecast with its own quota while the server keeps all the logic. Circuit breaker, caching, retries. | `weather.py`, `client.ts` |
-| **"No Travel" ranked first** | A route you can't safely drive never wins just because it has fewer Severe miles. | `recommendation.py` |
-| **Light / dark / satellite maps** | Dark for night driving, satellite for terrain. | `basemaps.ts` |
+| **Works offline** | With no signal the app still opens with the **last trip** (routes, checkpoints, heatmap) and the map areas already viewed. Live updates pause and resume on reconnect. | `sw.js`, `savedTrip.ts`, `useOnline.ts` |
+| **Mobile-first, few steps** | On phones the recommendation comes first, then the map and slider. The trip form collapses to one line. Finger-sized controls; **My location**; one-tap departure times (Now, +1 h, +3 h, Tomorrow 6 AM); load and interval remembered. Layouts for phone, tablet portrait and tablet landscape. | `styles.css`, `TripForm.tsx`, `App.tsx` |
+
+### A clearer map and UI
+
+| Added | What it does | Where |
+|---|---|---|
+| **Weather along the route strip** | The selected route as a risk-coloured bar by mile with ETA ticks. Touch or hover it to see weather at that spot, highlighted on the map, with a marker for the truck at the slider's hour. | `RouteProfile.tsx` |
+| **Route comparison table** | The three routes side by side in ranking order, with each row's winner highlighted and an average truck speed row. | `RouteComparison.tsx` |
+| **Smooth, accurate heatmap** | A Mercator-aligned grid painted as one image overlay, so there's no overlap distortion and no reprojection error. All 49 hours are pre-rendered, so the slider never waits on the network. Risk, wind, rain and snow layers. | `heatmap.py`, `heatmapImage.ts` |
+| **Truck on the timeline** | Moving the slider moves a truck marker along the route to where you'd be at that hour. | `geo.ts`, `MapView.tsx` |
+| **Light / dark / satellite maps** | Dark for night driving, satellite for terrain; the choice is remembered. | `basemaps.ts` |
+| **Speed limits on screen** | Every checkpoint shows the limit a truck must obey (marked when a state truck limit is lower than the posted one). | `CheckpointList.tsx` |
+
+### Reliability and scale
+
+| Added | What it does | Where |
+|---|---|---|
+| **Free-tier rate-limit resilience** | Open-Meteo throttles shared cloud IPs, so the browser fetches the forecast with its own quota while the server keeps all the logic. Includes a circuit breaker, caching, and retries with backoff. | `weather.py`, `client.ts` |
+| **Non-blocking speed-limit lookups** | Plans never wait on the free speed-limit server. Lookups run in the background (2 at a time, backing off on 429), limits are cached by location and direction so any route on the same roads reuses them, and failures cool down. | `speed_limits.py` |
+| **Stateless, horizontally scalable API** | Any instance can serve any request; Redis is optional for a shared cache; DRF throttling protects upstream quotas. | `settings.py` |
+| **Resilient caching** | Cache errors are treated as misses, never as failed requests. | `cache.py` |
+| **One-container deploy** | Django serves the API and the built React app; Render blueprint included. | `Dockerfile`, `render.yaml` |
+
+### Engineering
+
+- **Tests:** **107 backend tests** cover risk boundaries, ranking, ETAs, speed-limit and state-truck rules, providers, offline fallback and the API. **17 frontend tests** cover heatmap colours, truck position, live-change detection, next hazard, the saved trip and tile projection.
+- **Pure, typed domain logic:** risk, ranking and geometry have no I/O; the frontend is strict TypeScript.
+- **Thin providers:** every external service sits behind one small module, so routing, weather, speed limits or geocoding can each be swapped independently.
 
 ---
 
@@ -250,7 +287,18 @@ The ETA decides which forecast hour each checkpoint is checked against, so it sh
    - **Motorway / trunk:** the lower of the posted limit and the truck's **governed speed** (`TRUCK_MAX_SPEED_MPH`, default 65; most fleet trucks are speed-limited). A 75 mph interstate is driven at 65, a 55 mph stretch at 55.
    - **Other roads:** OSRM's estimate, which includes turns and intersections, but never faster than the posted limit or the governed speed.
    - **No limit known:** OSRM's estimate capped at the governed speed.
-3. **Show them:** each checkpoint shows the posted limit at that spot, and each route its average truck speed.
+3. **State truck limits on top.** Some states cap trucks below the posted limit statewide, by statute, and map data rarely tags this per road. `truck_rules.py` places every segment in its state (US Census 2010 boundaries, simplified to ~1 km) and lowers the cap:
+
+   | State | Truck limit | Source |
+   |---|---|---|
+   | California | 55 mph | Vehicle Code §22406 |
+   | Oregon | 55 mph | ORS 811.111 (some I-84 sections allow 60–65; not modelled, so conservative) |
+   | Washington | 60 mph | RCW 46.61.410 |
+   | Michigan | 65 mph | MCL 257.627 |
+   | Indiana | 65 mph | IC 9-21-5-2 |
+
+   Only states whose truck limit can bind at a typical governed speed are listed. The table is data; verify it against current statutes before relying on it, and extend it as needed. Rules assume a loaded tractor-trailer, which is above every state's weight threshold.
+4. **Show them:** each checkpoint shows the limit a truck must obey, marked when a state truck limit is lower than the posted one, and each route its average truck speed.
 
 **Fast and polite to a free server.** The public Valhalla server allows ~1 request/second and 200 km per request, so a cross-country trip needs many lookups.
 - **Spatial cache:** limits are cached by **map cell (~500 m) and direction of travel**, not per route. Any later route over the same roads (the other options, live re-checks from GPS, other users) reuses them without calling Valhalla.
@@ -387,6 +435,7 @@ Open-Meteo's free tier limits requests **per IP address**, and free cloud hosts 
 |---|---|
 | Routing | [OSRM](https://project-osrm.org/) public server |
 | Posted speed limits | [Valhalla](https://valhalla.github.io/valhalla/) public server (OpenStreetMap `maxspeed`) |
+| State boundaries (truck rules) | US Census Bureau 2010 cartographic boundaries (public domain), bundled |
 | Weather | [Open-Meteo](https://open-meteo.com/) hourly forecast API |
 | Geocoding / autocomplete | [Photon](https://photon.komoot.io/) (OpenStreetMap data) |
 | Base maps | Esri World Light Gray / Dark Gray / Imagery |
@@ -415,6 +464,8 @@ backend/                       Django 5 + DRF (stateless API)
       heatmap.py               corridor grid + 49 hourly frames
       routing.py               OSRM client + via-point alternatives
       speed_limits.py          posted limits (Valhalla), spatial cache, truck segment timing
+      truck_rules.py           state truck speed limits (CA 55, OR 55, WA 60, …) + point-in-state
+    data/state_boundaries.json simplified boundaries for the truck-rule states
       weather.py               Open-Meteo client, batching, caching, browser fallback
       geocoding.py             Photon client
       http.py                  shared HTTP session: pooling, retries, timeouts
@@ -486,7 +537,7 @@ Example `POST /api/plan/` body:
 ## Testing
 
 ```bash
-cd backend && pytest            # 93 tests
+cd backend && pytest            # 107 tests
 cd frontend && npm test         # 17 tests
 cd frontend && npm run typecheck
 ```
@@ -495,6 +546,7 @@ What's covered:
 
 - **Risk rules:** every band boundary for wind, rain and snow (including `≥` vs `>` at the top), and all load rules at their exact thresholds (30,000 / 30,001 lb, 40,000 / 40,001 lb).
 - **Recommendation:** each ranking criterion and its tie-breakers, No Travel ordering, float-noise rounding, explanation text.
+- **State truck limits:** state lookup (including border cases like Portland, OR vs Vancouver, WA), California trucks at 55 on a 70 mph freeway, rules applied even without posted limits.
 - **Speed limits:** the truck timing rule for every road type, mapping matched edges onto route miles, spatial reuse by differently sampled routes, background (non-blocking) lookups, failure cooldown, chunking under service limits.
 - **Planner:** checkpoint placement, ETAs from uneven segment speeds, mile coverage with a partial last interval, weather sampled at the ETA hour, risk-coloured route segments.
 - **Providers (HTTP mocked):** OSRM parsing and the truck speed cap, via-point alternatives, spur rejection, Open-Meteo unit conversion, batching and caching.
@@ -551,7 +603,7 @@ docker run -p 8000:8000 -e DJANGO_SECRET_KEY=... -e DJANGO_ALLOWED_HOSTS=your.do
 
 ## Assumptions, trade-offs and limitations
 
-- **Routing geometry uses a car profile;** truck ETAs come from posted limits and the governed speed, but bridge heights and weight-restricted roads aren't modelled. Truck-specific posted limits (`maxspeed:hgv`, e.g. California's 55 mph truck limit) aren't separated from general limits; the governed-speed cap covers most of the difference.
+- **Routing geometry uses a car profile;** truck ETAs come from posted limits and the governed speed, but bridge heights and weight-restricted roads aren't modelled. Statewide truck speed limits are applied from a rule table (CA, OR, WA, MI, IN); per-road truck signs (`maxspeed:hgv`) beyond those, and Oregon's 60–65 mph truck sections, aren't modelled.
 - **Posted limits come from a free, volunteer-run server.** When it's slow or unavailable, ETAs use the fallback until limits arrive. Production should self-host Valhalla (`VALHALLA_URL`). A truck routing API (e.g. HERE, or OpenRouteService `driving-hgv`) can be swapped in inside `routing.py` without touching the rules.
 - **Sustained wind** (`wind_speed_10m`) drives the classification, as the table specifies. Gusts are shown for context.
 - **No hours-of-service breaks** are added, so ETAs on trips with more than ~11 hours of driving are optimistic. Live updates correct ETAs as the trip progresses.

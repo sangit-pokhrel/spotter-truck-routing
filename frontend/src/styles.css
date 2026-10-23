@@ -1716,3 +1716,16 @@ details[open] > summary.section-title {
     justify-content: flex-end;
   }
 }
+
+.truck-limit {
+  color: #8a4b00;
+  font-weight: 500;
+}
+
+.truck-limit small {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
