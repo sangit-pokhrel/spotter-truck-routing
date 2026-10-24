@@ -126,7 +126,7 @@ export default function App() {
           <i />
           <i />
         </div>
-        <h1>Weather-Aware Truck Routing</h1>
+        <h1>Weather based Route Planning</h1>
         <span className="topbar-sub">Route risk from forecast weather at your ETA</span>
         <nav className="topbar-meta">
           {installable && (
