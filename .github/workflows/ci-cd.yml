@@ -155,7 +155,7 @@ jobs:
 
       # The stack definition is versioned with the code: ship it with every release.
       - name: Copy stack files
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
