@@ -166,7 +166,7 @@ jobs:
           strip_components: 1
 
       - name: Release
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           TAG: ${{ needs.image.outputs.tag }}
           GHCR_USER: ${{ github.actor }}
