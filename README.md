@@ -4,7 +4,9 @@ A React + Django app that helps a truck driver pick the safest route between two
 checks the forecast at each point on the way for the hour the truck will actually be there,
 applies the load-weight rules, and weighs that against travel time.
 
-- Live app: [spotter-truck-routing-15e6.onrender.com](https://spotter-truck-routing-15e6.onrender.com)
+- Live app: [truckrouting.sangitpokhrel.com.np](https://truckrouting.sangitpokhrel.com.np)
+  (backup on Render: [spotter-truck-routing-15e6.onrender.com](https://spotter-truck-routing-15e6.onrender.com), may take ~40 s to wake up)
+- Docker image: [`sangit56/spotter-truck-routing`](https://hub.docker.com/r/sangit56/spotter-truck-routing)
 - Walkthrough video: _add Loom link_
 
 | Desktop | Phone |
@@ -145,6 +147,16 @@ evenly spaced in Web Mercator, so the browser draws one pixel per cell onto a sm
 smooths it, and places it as a single image overlay with no reprojection error. Frames are
 rendered once and cached, so moving the slider just swaps an image.
 
+### Interface
+
+Forms and controls use Material UI with a custom theme ([`theme.ts`](frontend/src/theme.ts)) that
+carries the app's colours and IBM Plex type, plus larger touch targets and 16px inputs on phones
+(iOS zooms into anything smaller). Place search is an MUI Autocomplete over Photon results, with
+stale results hidden while a newer query is in flight. The map, heatmap, route strip and the
+comparison and checkpoint tables stay hand-built: they update on every slider step or pointer
+move, so they're kept as light as possible. Libraries are split into their own chunks (React,
+MUI, Leaflet), so a release only changes the small app bundle and browsers keep the rest cached.
+
 ### Live updates, alerts and offline
 
 With live updates on, the app re-plans from the GPS position every 15 minutes (and when it comes
@@ -213,13 +225,21 @@ Places can be text or `{label, lat, lon}`. The departure needs a timezone offset
 ## Deployment
 
 The app ships as one Docker image: Django serves the API and the built React app, runs as a
-non-root user, and has a health check that reports the release version.
+non-root user, and has a health check that reports the release version. It's published on Docker
+Hub, so trying it needs nothing but Docker:
 
-### Own VPS (recommended)
+```bash
+docker run -p 8000:8000 -e DJANGO_SECRET_KEY=change-me -e DJANGO_ALLOWED_HOSTS=localhost \
+  sangit56/spotter-truck-routing
+```
 
-A VPS has its own IP, so the weather API's free quota isn't shared, and you can self-host
-Valhalla to remove the speed-limit rate limit entirely. The app runs on port 8563 and leaves 80
-and 443 to the server's other services.
+### Own VPS (where the live app runs)
+
+A VPS has its own IP, so the weather API's free quota isn't shared, the app never sleeps, and
+Redis keeps the learned speed limits across restarts. You can also self-host Valhalla to remove
+the speed-limit rate limit entirely. The app runs on port 8563 and leaves 80 and 443 to the
+server's other services. The live instance runs behind aaPanel's nginx and Cloudflare, with
+`TRUSTED_PROXIES=2` so rate limiting sees the real client address.
 
 One-time setup on the server:
 
@@ -273,9 +293,15 @@ Tested locally: the stack on port 8563, the nginx config (including a 2.5 MB req
 default limit would reject), the Caddy profile, and a deliberately broken release, which was
 rolled back automatically.
 
-Deploying by hand: `cd /opt/truck-routing && ./deploy.sh latest`.
+Deploying by hand: `cd /opt/truck-routing && ./deploy.sh latest`. Without CI (or a registry), the
+server can build from the repo itself: `bash /opt/truck-routing/src/deploy/update-from-source.sh`
+clones or updates the code, builds the image tagged with the commit, and releases it through
+`deploy.sh`, with the same health check and rollback.
 
-### Render
+To release an image built elsewhere (the live app uses the Docker Hub image), set `IMAGE` in
+`.env` and run `./deploy.sh <tag>` on the server.
+
+### Render (backup)
 
 New > Blueprint, then pick the repo; [`render.yaml`](render.yaml) sets everything up, including
 `WEATHER_SOURCE=client` because Render's shared IPs get throttled by the weather API.
@@ -318,8 +344,9 @@ backend/
   trips/tests/
 frontend/src/
   App.tsx                     layout
+  theme.ts                    Material UI theme
   hooks/useTripSession.ts     planning, live updates, alerts, offline copy
-  components/                 map, comparison table, route strip, forms
+  components/                 map, comparison table, route strip, MUI forms and controls
   lib/                        heatmap rasteriser, geometry, pop-out map, PWA helpers
 frontend/public/sw.js         service worker
 deploy/                       VPS stack: compose.yaml, nginx-site.conf, deploy.sh

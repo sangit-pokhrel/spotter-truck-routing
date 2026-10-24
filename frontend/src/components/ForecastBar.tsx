@@ -1,7 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import IconButton from "@mui/material/IconButton";
+import Slider from "@mui/material/Slider";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import type { HeatMetric } from "../api/types";
 import { formatEta } from "../lib/format";
 import { METRIC_SCALES, RISK_COLOR, RISK_LABEL, RISK_ORDER, colorFor } from "../lib/risk";
+import { PauseIcon, PlayIcon } from "./icons";
 
 interface Props {
   start: string;
@@ -18,6 +23,11 @@ interface Props {
 
 const METRICS: HeatMetric[] = ["risk", "wind", "rain", "snow"];
 const PLAY_STEP_MS = 450;
+
+/** A tick every 12 hours: 0h, 12h, 24h, 36h, 48h. */
+function marksFor(hours: number) {
+  return Array.from({ length: Math.floor(hours / 12) + 1 }, (_, i) => ({ value: i * 12, label: `${i * 12}h` }));
+}
 
 function Legend({ metric }: { metric: HeatMetric }) {
   if (metric === "risk") {
@@ -62,61 +72,60 @@ export function ForecastBar({ start, hours, hour, onHour, onStep, metric, onMetr
     return () => window.clearInterval(id);
   }, [playing, onStep]);
 
+  const marks = useMemo(() => marksFor(hours), [hours]);
   const disabled = loading || !!error;
   const at = new Date(new Date(start).getTime() + hour * 3600_000).toISOString();
 
   return (
     <div className="forecast">
       <div className="forecast-left">
-        <button
-          type="button"
+        <IconButton
           className="play"
           onClick={() => setPlaying((p) => !p)}
           disabled={disabled}
           aria-label={playing ? "Pause forecast animation" : "Play forecast animation"}
         >
-          {playing ? (
-            <svg viewBox="0 0 12 12" aria-hidden>
-              <rect x="2" y="1.5" width="3" height="9" />
-              <rect x="7" y="1.5" width="3" height="9" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 12 12" aria-hidden>
-              <path d="M3 1.5v9l7.5-4.5z" />
-            </svg>
-          )}
-        </button>
+          {playing ? <PauseIcon fontSize="small" /> : <PlayIcon fontSize="small" />}
+        </IconButton>
         <div className="forecast-time">
           <b>+{String(hour).padStart(2, "0")}h</b>
           <span>{formatEta(at)}</span>
         </div>
       </div>
 
-      <input
+      <Slider
         className="slider"
-        type="range"
+        size="small"
         min={0}
         max={hours}
         step={1}
+        marks={marks}
         value={hour}
-        onChange={(e) => {
+        onChange={(_, value) => {
           setPlaying(false);
-          onHour(Number(e.target.value));
+          onHour(value as number);
         }}
         disabled={disabled}
         aria-label="Forecast hour after departure"
-        aria-valuetext={`Departure plus ${hour} hours`}
+        getAriaValueText={(h) => `Departure plus ${h} hours`}
+        valueLabelDisplay="auto"
+        valueLabelFormat={(h) => `+${h}h`}
       />
 
       <div className="forecast-right">
-        <div className="seg seg-sm" role="radiogroup" aria-label="Heatmap layer">
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          value={metric}
+          onChange={(_, m: HeatMetric | null) => m && onMetric(m)}
+          aria-label="Heatmap layer"
+        >
           {METRICS.map((m) => (
-            <label key={m} className={metric === m ? "on" : undefined}>
-              <input type="radio" name="metric" checked={metric === m} onChange={() => onMetric(m)} />
+            <ToggleButton key={m} value={m}>
               {m === "risk" ? "Risk" : METRIC_SCALES[m].label}
-            </label>
+            </ToggleButton>
           ))}
-        </div>
+        </ToggleButtonGroup>
         {loading ? (
           <span className="muted small">Loading corridor forecast…</span>
         ) : error ? (

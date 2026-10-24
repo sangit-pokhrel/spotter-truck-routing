@@ -14,3 +14,4 @@ backend/db.sqlite3
 *.md
 !README.md
 docs/
+linkedin/

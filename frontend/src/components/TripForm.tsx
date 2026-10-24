@@ -1,8 +1,19 @@
 import { useState } from "react";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import FormLabel from "@mui/material/FormLabel";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
+import Stack from "@mui/material/Stack";
+import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Tooltip from "@mui/material/Tooltip";
 import type { PlanRequest } from "../api/types";
 import { nextHour, toLocalInputValue } from "../lib/format";
 import { getCurrentPlace } from "../lib/location";
 import { loadPref, savePref } from "../lib/prefs";
+import { MyLocationIcon, SwapVertIcon } from "./icons";
 import { PlaceInput, type PlaceValue } from "./PlaceInput";
 
 const INTERVALS = [10, 25, 50] as const;
@@ -73,20 +84,17 @@ export function TripForm({ loading, onSubmit }: Props) {
   };
 
   const locateButton = (
-    <button
-      type="button"
+    <Button
+      size="small"
       className="locate-btn"
       onClick={useMyLocation}
-      disabled={locating}
+      loading={locating}
+      loadingPosition="start"
+      startIcon={<MyLocationIcon />}
       aria-label="Use my current location"
-      title="Use my location"
     >
-      <svg viewBox="0 0 16 16" aria-hidden>
-        <circle cx="8" cy="8" r="3" />
-        <path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15" />
-      </svg>
-      <span>{locating ? "Locating…" : "My location"}</span>
-    </button>
+      My location
+    </Button>
   );
 
   return (
@@ -107,84 +115,79 @@ export function TripForm({ loading, onSubmit }: Props) {
           />
           <PlaceInput label="To" placeholder="City, address or lat,lon" value={destination} onChange={setDestination} />
         </div>
-        <button
-          type="button"
-          className="icon-btn od-swap"
-          onClick={swap}
-          aria-label="Swap origin and destination"
-          title="Swap"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden>
-            <path d="M5 2v10M5 2 2.5 4.5M5 2l2.5 2.5M11 14V4m0 10-2.5-2.5M11 14l2.5-2.5" />
-          </svg>
-        </button>
+        <Tooltip title="Swap">
+          <IconButton className="od-swap" onClick={swap} aria-label="Swap origin and destination">
+            <SwapVertIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </div>
       {locateError && <p className="field-error">{locateError}</p>}
 
-      <div className="field">
-        <label htmlFor="departure">Departure</label>
-        <div className="chips" role="group" aria-label="Quick departure times">
+      <Stack spacing={1}>
+        <Stack
+          direction="row"
+          useFlexGap
+          sx={{ flexWrap: "wrap", gap: 0.75 }}
+          role="group"
+          aria-label="Quick departure times"
+        >
           {QUICK_DEPARTURES.map((q) => (
-            <button
+            <Chip
               key={q.label}
-              type="button"
-              className="chip"
+              label={q.label}
+              variant="outlined"
+              size="small"
               onClick={() => setDeparture(toLocalInputValue(q.at()))}
-            >
-              {q.label}
-            </button>
+            />
           ))}
-        </div>
-        <input
-          id="departure"
+        </Stack>
+        <TextField
+          label="Departure"
           type="datetime-local"
           value={departure}
-          max={toLocalInputValue(maxDeparture)}
           onChange={(e) => setDeparture(e.target.value)}
           required
+          slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: toLocalInputValue(maxDeparture) } }}
         />
-      </div>
+      </Stack>
 
       <div className="field-row">
-        <div className="field">
-          <label htmlFor="weight">Load</label>
-          <div className="input-unit">
-            <input
-              id="weight"
-              type="number"
-              inputMode="numeric"
-              min={100}
-              max={150000}
-              step={100}
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              required
-            />
-            <span>lb</span>
-          </div>
-        </div>
-        <fieldset className="field">
-          <legend>Check weather every (mi)</legend>
-          <div className="seg">
+        <TextField
+          label="Load"
+          type="number"
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          required
+          slotProps={{
+            input: { endAdornment: <InputAdornment position="end">lb</InputAdornment> },
+            htmlInput: { min: 100, max: 150000, step: 100, inputMode: "numeric", className: "mono" },
+          }}
+        />
+        <div>
+          <FormLabel id="interval-label" className="field-label">
+            Check weather every (mi)
+          </FormLabel>
+          <ToggleButtonGroup
+            exclusive
+            fullWidth
+            size="small"
+            color="primary"
+            value={interval}
+            onChange={(_, mi: Interval | null) => mi && setIntervalMiles(mi)}
+            aria-labelledby="interval-label"
+          >
             {INTERVALS.map((mi) => (
-              <label key={mi} className={interval === mi ? "on" : undefined}>
-                <input
-                  type="radio"
-                  name="interval"
-                  value={mi}
-                  checked={interval === mi}
-                  onChange={() => setIntervalMiles(mi)}
-                />
+              <ToggleButton key={mi} value={mi}>
                 {mi}
-              </label>
+              </ToggleButton>
             ))}
-          </div>
-        </fieldset>
+          </ToggleButtonGroup>
+        </div>
       </div>
 
-      <button type="submit" className="btn-primary" disabled={loading}>
+      <Button type="submit" variant="contained" size="large" fullWidth loading={loading} loadingPosition="start">
         {loading ? "Planning…" : "Find safest route"}
-      </button>
+      </Button>
     </form>
   );
 }

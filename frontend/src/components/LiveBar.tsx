@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import type { PlanChange } from "../lib/live";
+import Alert, { type AlertColor } from "@mui/material/Alert";
+import Button from "@mui/material/Button";
+import FormControlLabel from "@mui/material/FormControlLabel";
+import Switch from "@mui/material/Switch";
+import type { ChangeTone, PlanChange } from "../lib/live";
+import { RefreshIcon } from "./icons";
 
 interface Props {
   live: boolean;
@@ -16,6 +21,8 @@ interface Props {
   onAlerts: (on: boolean) => void;
 }
 
+const TONE_SEVERITY: Record<ChangeTone, AlertColor> = { worse: "error", better: "success", same: "info" };
+
 function ago(date: Date, now: number): string {
   const min = Math.floor((now - date.getTime()) / 60_000);
   if (min < 1) return "just now";
@@ -23,7 +30,7 @@ function ago(date: Date, now: number): string {
   return `${Math.round(min / 60)} h ago`;
 }
 
-function Switch({
+function Toggle({
   checked,
   onChange,
   label,
@@ -35,14 +42,16 @@ function Switch({
   hint: string;
 }) {
   return (
-    <label className="switch">
-      <input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span className="switch-track" aria-hidden />
-      <span className="switch-label">
-        {label}
-        <small>{hint}</small>
-      </span>
-    </label>
+    <FormControlLabel
+      className="switch"
+      control={<Switch color="success" checked={checked} onChange={(e) => onChange(e.target.checked)} />}
+      label={
+        <span className="switch-label">
+          {label}
+          <small>{hint}</small>
+        </span>
+      }
+    />
   );
 }
 
@@ -64,19 +73,28 @@ export function LiveBar(props: Props) {
   return (
     <div className="live">
       <div className="live-row">
-        <Switch
+        <Toggle
           checked={live}
           onChange={onToggle}
           label="Live updates"
           hint={`${liveHint}${updatedAt ? ` · updated ${ago(updatedAt, now)}` : ""}`}
         />
-        <button type="button" className="btn-secondary" onClick={onRecheck} disabled={busy || offline}>
+        <Button
+          variant="outlined"
+          color="inherit"
+          onClick={onRecheck}
+          disabled={offline}
+          loading={busy}
+          loadingPosition="start"
+          startIcon={<RefreshIcon />}
+          sx={{ flex: "none", borderColor: "divider" }}
+        >
           {busy ? "Checking…" : "Re-check now"}
-        </button>
+        </Button>
       </div>
       {alerts !== null && (
         <div className="live-row live-row-sub">
-          <Switch
+          <Toggle
             checked={alerts}
             onChange={onAlerts}
             label="Alert me"
@@ -85,11 +103,15 @@ export function LiveBar(props: Props) {
         </div>
       )}
       {change && (
-        <p className={`live-change live-${change.tone}`} role="status">
+        <Alert severity={TONE_SEVERITY[change.tone]} role="status" sx={{ mt: 1.25 }}>
           {change.text}
-        </p>
+        </Alert>
       )}
-      {note && <p className="live-note">{note}</p>}
+      {note && (
+        <Alert severity="info" icon={false} sx={{ mt: 1.25 }}>
+          {note}
+        </Alert>
+      )}
     </div>
   );
 }

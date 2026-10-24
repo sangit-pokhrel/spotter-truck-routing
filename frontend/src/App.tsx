@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Alert from "@mui/material/Alert";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Tooltip from "@mui/material/Tooltip";
+import type { SxProps, Theme } from "@mui/material/styles";
 import type { Checkpoint, HeatMetric, TripPlan } from "./api/types";
 import { CheckpointList } from "./components/CheckpointList";
 import { ForecastBar } from "./components/ForecastBar";
+import { FitIcon, PipIcon } from "./components/icons";
 import { LiveBar } from "./components/LiveBar";
 import { MapView, type FocusedCheckpoint, type HeatOverlay } from "./components/MapView";
 import { RouteComparison } from "./components/RouteComparison";
@@ -18,6 +26,9 @@ import { pointAtMile, routePath, truckPosition } from "./lib/geo";
 import { renderFrames } from "./lib/heatmapImage";
 import { canInstall, onInstallAvailabilityChange, promptInstall } from "./lib/pwa";
 import { ROUTE_COLORS } from "./lib/risk";
+
+// map controls float over tiles, so they need their own background and shadow
+const MAP_CONTROL: SxProps<Theme> = { bgcolor: "background.paper", boxShadow: 1, borderColor: "divider" };
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -130,29 +141,36 @@ export default function App() {
         <span className="topbar-sub">Route risk from forecast weather at your ETA</span>
         <nav className="topbar-meta">
           {installable && (
-            <button type="button" className="install-btn" onClick={promptInstall}>
+            <Button size="small" variant="contained" onClick={promptInstall}>
               Install app
-            </button>
+            </Button>
           )}
           <span className="meta-sources">OSRM · Open-Meteo · Photon</span>
         </nav>
       </header>
 
       {!session.online && (
-        <div className="offline-bar" role="status">
+        <Alert severity="warning" square role="status" className="app-banner">
           <b>Offline.</b>{" "}
           {plan
             ? `Showing your saved trip${session.updatedAt ? ` from ${formatEta(session.updatedAt.toISOString())}` : ""}. Live updates resume when you're back online.`
             : "Planning needs a connection. Your last trip will appear here once you've planned one."}
-        </div>
+        </Alert>
       )}
       {session.online && session.showingSaved && (
-        <div className="saved-bar" role="status">
-          Showing your last trip, saved {session.updatedAt ? formatEta(session.updatedAt.toISOString()) : "earlier"}.{" "}
-          <button type="button" className="link-btn" onClick={session.recheck} disabled={session.loading}>
-            Refresh forecasts
-          </button>
-        </div>
+        <Alert
+          severity="info"
+          square
+          role="status"
+          className="app-banner"
+          action={
+            <Button size="small" onClick={session.recheck} disabled={session.loading}>
+              Refresh forecasts
+            </Button>
+          }
+        >
+          Showing your last trip, saved {session.updatedAt ? formatEta(session.updatedAt.toISOString()) : "earlier"}.
+        </Alert>
       )}
 
       <div className={`workspace${plan ? " has-plan" : ""}`}>
@@ -181,17 +199,17 @@ export default function App() {
               <h2 className="section-title">
                 Trip
                 {plan && (
-                  <button type="button" className="link-btn" onClick={() => setEditing(false)}>
+                  <Button size="small" onClick={() => setEditing(false)} sx={{ ml: "auto", py: 0 }}>
                     Cancel
-                  </button>
+                  </Button>
                 )}
               </h2>
               <TripForm loading={session.loading} onSubmit={session.planTrip} />
             </div>
             {session.error && (
-              <p className="alert" role="alert">
+              <Alert severity="error" sx={{ mt: 1.5 }}>
                 {session.error}
-              </p>
+              </Alert>
             )}
           </section>
 
@@ -267,34 +285,46 @@ export default function App() {
               inlineDetails={!compact}
             />
             <div className="map-toolbar">
-              <div className="seg seg-sm seg-map" role="radiogroup" aria-label="Base map">
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={basemap}
+                onChange={(_, id: BasemapId | null) => id && chooseBasemap(id)}
+                aria-label="Base map"
+                sx={MAP_CONTROL}
+              >
                 {Object.values(BASEMAPS).map((b) => (
-                  <label key={b.id} className={basemap === b.id ? "on" : undefined}>
-                    <input
-                      type="radio"
-                      name="basemap"
-                      checked={basemap === b.id}
-                      onChange={() => chooseBasemap(b.id)}
-                    />
+                  <ToggleButton key={b.id} value={b.id}>
                     {b.label}
-                  </label>
+                  </ToggleButton>
                 ))}
-              </div>
+              </ToggleButtonGroup>
               {plan && (
-                <button type="button" className="map-btn" onClick={() => setFitKey((k) => k + 1)}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="inherit"
+                  startIcon={<FitIcon />}
+                  onClick={() => setFitKey((k) => k + 1)}
+                  sx={MAP_CONTROL}
+                >
                   Fit routes
-                </button>
+                </Button>
               )}
               {plan && floatingSupported() && (
-                <button
-                  type="button"
-                  className={`map-btn${floatingOpen ? " on" : ""}`}
-                  onClick={toggleFloating}
-                  title="Float a mini map over other apps"
-                  aria-pressed={floatingOpen}
-                >
-                  {floatingOpen ? "Close pop-out" : "Pop-out map"}
-                </button>
+                <Tooltip title="Float a mini map over other apps">
+                  <Button
+                    size="small"
+                    variant={floatingOpen ? "contained" : "outlined"}
+                    color={floatingOpen ? "primary" : "inherit"}
+                    startIcon={<PipIcon />}
+                    onClick={toggleFloating}
+                    aria-pressed={floatingOpen}
+                    sx={MAP_CONTROL}
+                  >
+                    {floatingOpen ? "Close pop-out" : "Pop-out map"}
+                  </Button>
+                </Tooltip>
               )}
             </div>
             {compact && plan && expandedRoute && (
@@ -306,7 +336,7 @@ export default function App() {
             )}
             {session.loading && (
               <div className="map-status" role="status">
-                <span className="progress" aria-hidden />
+                <CircularProgress size={14} color="inherit" aria-hidden />
                 Routing and checking forecasts at every checkpoint…
               </div>
             )}

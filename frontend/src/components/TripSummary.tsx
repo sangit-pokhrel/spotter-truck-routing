@@ -1,3 +1,4 @@
+import Button from "@mui/material/Button";
 import type { TripPlan } from "../api/types";
 import { formatEta } from "../lib/format";
 
@@ -14,9 +15,9 @@ export function TripSummary({ plan, onEdit }: { plan: TripPlan; onEdit: () => vo
           {formatEta(plan.departure)} · {plan.load_weight_lb.toLocaleString()} lb · every {plan.interval_mi} mi
         </span>
       </div>
-      <button type="button" className="btn-secondary" onClick={onEdit}>
+      <Button variant="outlined" onClick={onEdit} sx={{ flex: "none" }}>
         Edit trip
-      </button>
+      </Button>
     </div>
   );
 }
