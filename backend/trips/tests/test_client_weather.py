@@ -1,5 +1,6 @@
 """Fallback to browser-fetched forecasts when the server is rate-limited."""
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 import pytest
@@ -10,7 +11,7 @@ from trips.services import weather
 from trips.services.http import RateLimited
 from trips.services.weather import WeatherRequired, resolve_forecasts
 
-NOW = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+NOW = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
 POINTS = [(40.01, -100.01), (40.02, -100.02), (41.0, -101.0)]  # first two snap to the same cell
 
 
@@ -57,9 +58,8 @@ def test_auto_mode_falls_back_and_remembers_rate_limit(mode):
 
 def test_server_mode_surfaces_rate_limit(mode):
     mode("server")
-    with mock.patch.object(weather, "get_forecasts", side_effect=RateLimited("429")):
-        with pytest.raises(RateLimited):
-            resolve_forecasts(POINTS, NOW, NOW)
+    with mock.patch.object(weather, "get_forecasts", side_effect=RateLimited("429")), pytest.raises(RateLimited):
+        resolve_forecasts(POINTS, NOW, NOW)
 
 
 def test_supplied_forecasts_are_parsed_without_http(mode):

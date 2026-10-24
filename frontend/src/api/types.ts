@@ -38,7 +38,7 @@ export interface RouteOption {
   duration_h: number;
   arrival: string;
   avg_speed_mph: number | null;
-  /** Share of the route's miles with a known posted speed limit (0–1). */
+  /** Share of miles with a known posted limit, 0-1. */
   speed_limit_coverage: number;
   miles_by_level: Record<RiskKey, number>;
   avg_risk: number;
@@ -53,7 +53,7 @@ export interface TripPlan {
   departure: string;
   load_weight_lb: number;
   interval_mi: number;
-  /** "pending": limits for some stretches are still being looked up; plan again for refined ETAs. */
+  /** "pending" until all speed limits are known; re-plan for refined ETAs. */
   speed_limits: "applied" | "pending" | "unavailable" | "disabled";
   recommended_route: string;
   recommendation_reason: string;

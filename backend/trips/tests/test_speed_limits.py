@@ -25,20 +25,30 @@ def valhalla(*edges):
 
 class TestTruckHours:
     def test_interstate_driven_at_governed_speed_not_posted_75(self):
-        assert truck_hours(65, osrm_hours=1.2, limit_mph=75, road_class="motorway", governed_mph=GOVERNED) == pytest.approx(1.0)
+        assert truck_hours(
+            65, osrm_hours=1.2, limit_mph=75, road_class="motorway", governed_mph=GOVERNED
+        ) == pytest.approx(1.0)
 
     def test_highway_below_governed_speed_uses_posted_limit(self):
-        assert truck_hours(55, osrm_hours=0.5, limit_mph=55, road_class="trunk", governed_mph=GOVERNED) == pytest.approx(1.0)
+        assert truck_hours(
+            55, osrm_hours=0.5, limit_mph=55, road_class="trunk", governed_mph=GOVERNED
+        ) == pytest.approx(1.0)
 
     def test_local_road_keeps_slower_osrm_estimate(self):
-        # 10 mi at a posted 45 would be 13 min; OSRM says 20 min (turns, lights) → keep OSRM
-        assert truck_hours(10, osrm_hours=1 / 3, limit_mph=45, road_class="primary", governed_mph=GOVERNED) == pytest.approx(1 / 3)
+        # 10 mi at a posted 45 would be 13 min; OSRM says 20 min (turns, lights) -> keep OSRM
+        assert truck_hours(
+            10, osrm_hours=1 / 3, limit_mph=45, road_class="primary", governed_mph=GOVERNED
+        ) == pytest.approx(1 / 3)
 
     def test_local_road_never_faster_than_posted(self):
-        assert truck_hours(30, osrm_hours=0.4, limit_mph=30, road_class="secondary", governed_mph=GOVERNED) == pytest.approx(1.0)
+        assert truck_hours(
+            30, osrm_hours=0.4, limit_mph=30, road_class="secondary", governed_mph=GOVERNED
+        ) == pytest.approx(1.0)
 
     def test_unknown_limit_falls_back_to_governed_cap(self):
-        assert truck_hours(65, osrm_hours=0.8, limit_mph=None, road_class=None, governed_mph=GOVERNED) == pytest.approx(1.0)
+        assert truck_hours(65, osrm_hours=0.8, limit_mph=None, road_class=None, governed_mph=GOVERNED) == pytest.approx(
+            1.0
+        )
 
 
 def test_lookup_maps_edges_onto_route_and_retimes_it():
@@ -67,7 +77,7 @@ def test_background_lookup_reports_pending_and_does_not_block():
     route = straight_route()
     with mock.patch.object(speed_limits, "_start", return_value=True) as start:
         assert enrich_routes([route]) == speed_limits.PENDING
-    assert start.call_args.args[1] is False  # wait=False → background thread
+    assert start.call_args.args[1] is False  # wait=False -> background thread
 
 
 def test_failed_lookup_keeps_fallback_eta_and_cools_down():
@@ -93,7 +103,7 @@ def test_checkpoints_carry_speed_limit_and_coverage():
     known = [(70.0, "motorway")] * 6 + [None] * 4
     apply_known_limits(route, known, GOVERNED)
     cps = build_checkpoints(route, interval_mi=50)
-    assert [cp.speed_limit_mph for cp in cps] == [70, 70, None]  # mile 50 is inside the 0–60 mi stretch
+    assert [cp.speed_limit_mph for cp in cps] == [70, 70, None]  # mile 50 is inside the 0-60 mi stretch
     assert limit_coverage(route) == pytest.approx(0.6)
 
 

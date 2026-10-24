@@ -1,0 +1,30 @@
+{
+	# Let's Encrypt account; certificates are issued and renewed automatically.
+	email {$ACME_EMAIL}
+}
+
+# HTTPS is required: phones only allow GPS, notifications, service workers (offline/PWA)
+# and install on secure origins. No domain? Use <your-vps-ip>.sslip.io as DOMAIN.
+{$DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy web:8000 {
+		health_uri /api/health/
+		health_interval 15s
+	}
+
+	# HSTS comes from Django (SECURE_HSTS_SECONDS) so it's set once, on any host.
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(self), picture-in-picture=(self), camera=(), microphone=()"
+		-Server
+	}
+
+	# Hashed build assets never change; the page and service worker must always revalidate.
+	# ">" replaces the header the app already sent instead of adding a second one.
+	@immutable path /assets/*
+	header @immutable >Cache-Control "public, max-age=31536000, immutable"
+	@revalidate path / /index.html /sw.js /manifest.webmanifest
+	header @revalidate >Cache-Control "no-cache"
+}

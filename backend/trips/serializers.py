@@ -1,4 +1,4 @@
-from datetime import timedelta, timezone as dt_timezone
+from datetime import UTC, timedelta
 
 from django.utils import timezone
 from rest_framework import serializers
@@ -51,9 +51,9 @@ WEATHER_SERIES = ("wind_speed_10m", "wind_gusts_10m", "rain", "showers", "snowfa
 
 
 class ClientWeatherSerializer(serializers.Serializer):
-    """Raw Open-Meteo hourly data the browser fetched on our behalf (see weather.WeatherRequired)."""
+    """Hourly Open-Meteo data the browser fetched for us (see weather.WeatherRequired)."""
 
-    start_hour = serializers.DateTimeField(default_timezone=dt_timezone.utc)
+    start_hour = serializers.DateTimeField(default_timezone=UTC)
     locations = serializers.ListField(
         child=serializers.ListField(child=serializers.FloatField(), min_length=2, max_length=2),
         max_length=MAX_WEATHER_LOCATIONS,

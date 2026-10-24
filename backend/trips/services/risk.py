@@ -1,12 +1,9 @@
-"""Weather risk classification (pure functions, no I/O).
+"""Risk classification for a single checkpoint.
 
-Band boundaries
----------------
-The spec gives integer/decimal ranges ("25–34 mph", "0.10–0.25 in/hr"). For continuous
-forecast values we treat each band's lower bound as inclusive, e.g. wind 34.9 mph is
-Moderate and 35.0 is High. The top band is written as "≥55" for wind but ">1.00" / ">3.0"
-for rain and snow, so exactly 1.00 in/hr of rain is Severe, not No Travel.
+Band lower bounds are inclusive (34.9 mph wind is Moderate, 35.0 is High). The top band follows
+the spec literally: wind >= 55 mph is No Travel, while rain and snow must exceed 1.00 / 3.0 in/hr.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -52,7 +49,7 @@ WIND_BANDS = Bands((25, 35, 45, 55), no_travel_inclusive=True, unit="mph")
 RAIN_BANDS = Bands((0.10, 0.25, 0.50, 1.00), no_travel_inclusive=False, unit="in/hr")
 SNOW_BANDS = Bands((0.5, 1.0, 2.0, 3.0), no_travel_inclusive=False, unit="in/hr")
 
-# Load rules: (min wind mph, max wind mph exclusive, load strictly above lb, resulting level)
+# (wind from, wind below, load above lb, resulting level)
 LOAD_RULES: tuple[tuple[float, float, float, RiskLevel], ...] = (
     (45, 55, 30_000, RiskLevel.NO_TRAVEL),
     (35, 45, 40_000, RiskLevel.SEVERE),
@@ -77,7 +74,7 @@ class RiskAssessment:
 
 
 def assess(sample: WeatherSample, load_weight_lb: float) -> RiskAssessment:
-    """Classify one checkpoint. Overall risk is the worst of wind, rain, snow and load rules."""
+    """Overall level is the worst of wind, rain and snow, raised further by the load rules."""
     wind = WIND_BANDS.classify(sample.wind_mph)
     rain = RAIN_BANDS.classify(sample.rain_in_hr)
     snow = SNOW_BANDS.classify(sample.snow_in_hr)

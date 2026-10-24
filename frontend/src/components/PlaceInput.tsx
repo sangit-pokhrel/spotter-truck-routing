@@ -14,7 +14,7 @@ interface Props {
   placeholder: string;
   value: PlaceValue;
   onChange: (value: PlaceValue) => void;
-  /** Optional button shown inside the field (e.g. "use my location"). */
+  /** e.g. a "use my location" button */
   action?: ReactNode;
 }
 
@@ -88,7 +88,11 @@ export function PlaceInput({ label, placeholder, value, onChange, action }: Prop
         onKeyDown={onKeyDown}
         required
       />
-      {value.place && !action && <span className="place-check" aria-label="Location confirmed">✓</span>}
+      {value.place && !action && (
+        <span className="place-check" aria-label="Location confirmed">
+          ✓
+        </span>
+      )}
       {action && <div className="field-action">{action}</div>}
       {showList && (
         <ul className="suggestions" id={`${id}-list`} role="listbox">

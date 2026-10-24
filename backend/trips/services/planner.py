@@ -1,4 +1,5 @@
-"""Trip planning: routes → checkpoints with ETAs → weather → risk → recommendation."""
+"""Builds a trip plan: routes, checkpoints with ETAs, weather, risk and the recommendation."""
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +27,7 @@ class TripRequest:
     departure: datetime  # timezone-aware
     load_weight_lb: float
     interval_mi: int
-    client_weather: dict | None = None  # browser-fetched forecasts, see weather.resolve_forecasts
+    client_weather: dict | None = None  # forecasts posted back by the browser
 
 
 @dataclass
@@ -34,8 +35,8 @@ class Checkpoint:
     mile: float
     point: LatLon
     hours: float  # hours after departure
-    speed_limit_mph: float | None = None  # posted limit where the checkpoint sits, when known
-    truck_limit_mph: float | None = None  # state truck limit there (e.g. CA 55), when one applies
+    speed_limit_mph: float | None = None  # posted limit, when known
+    truck_limit_mph: float | None = None  # state truck limit, e.g. 55 in CA
     covers: tuple[float, float] = (0.0, 0.0)  # mile range this checkpoint represents
     weather: WeatherSample | None = None
     risk: RiskAssessment | None = None
@@ -56,10 +57,10 @@ class EvaluatedRoute:
 
 
 def build_checkpoints(route: Route, interval_mi: float) -> list[Checkpoint]:
-    """Checkpoints at 0, interval, 2·interval, … and the destination.
+    """Checkpoints every `interval_mi` plus one at the destination.
 
-    Each one represents the stretch of road nearer to it than to its neighbours
-    (half an interval either side), so "Severe miles" sums real road distance.
+    Each checkpoint covers the road halfway to its neighbours, so the miles per risk level add
+    up to the route length.
     """
     cum_mi = cumulative(route.seg_miles)
     cum_h = cumulative(route.seg_hours)
@@ -192,8 +193,7 @@ def _checkpoint_json(cp: Checkpoint, departure: datetime) -> dict:
 
 def plan_trip(req: TripRequest) -> dict:
     routes = find_routes((req.origin.lat, req.origin.lon), (req.destination.lat, req.destination.lon))
-    # Posted limits change truck ETAs (and so which forecast hour each checkpoint gets);
-    # re-sort so Route A is still the fastest for a truck.
+    # Speed limits change the ETAs, so re-sort to keep Route A the fastest.
     speed_limits = enrich_routes(routes)
     routes.sort(key=lambda r: r.duration_h)
     checkpoint_sets = [build_checkpoints(r, req.interval_mi) for r in routes]
@@ -214,8 +214,7 @@ def plan_trip(req: TripRequest) -> dict:
         "departure": req.departure.isoformat(),
         "load_weight_lb": req.load_weight_lb,
         "interval_mi": req.interval_mi,
-        # "pending": posted limits for some stretches are still being looked up; plan again
-        # shortly for refined ETAs. See services/speed_limits.py.
+        # "pending" while limits are still being fetched; the client re-plans shortly.
         "speed_limits": speed_limits,
         "recommended_route": ranked[0].name,
         "recommendation_reason": explain(ranked),

@@ -38,8 +38,10 @@ def test_plan_passes_validated_request_to_planner(client):
 
 
 def test_plan_geocodes_free_text(client):
-    with mock.patch.object(views.geocoding, "resolve", return_value=Place("X", 30.0, -90.0)) as resolve, \
-            mock.patch.object(views, "plan_trip", return_value={}):
+    with (
+        mock.patch.object(views.geocoding, "resolve", return_value=Place("X", 30.0, -90.0)) as resolve,
+        mock.patch.object(views, "plan_trip", return_value={}),
+    ):
         resp = client.post("/api/plan/", payload(origin="New Orleans"), format="json")
     assert resp.status_code == 200
     resolve.assert_called_once_with("New Orleans")

@@ -1,4 +1,4 @@
-// Esri tiles: keyless and CDN-backed. (OSM's volunteer tile servers block many hosted apps.)
+// Esri tiles: keyless. OSM's own tile servers block many hosted apps.
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
 const ATTRIBUTION = "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors";
 
@@ -43,7 +43,7 @@ export function loadBasemap(): BasemapId {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && saved in BASEMAPS) return saved as BasemapId;
   } catch {
-    // storage unavailable (private mode etc.) — fall through to default
+    // storage unavailable (private mode etc.)
   }
   return "light";
 }

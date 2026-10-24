@@ -1,4 +1,5 @@
 """Shared HTTP session for third-party providers: connection pooling, retries, timeouts."""
+
 from __future__ import annotations
 
 import logging
@@ -33,8 +34,7 @@ def session() -> requests.Session:
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
         respect_retry_after_header=True,
-        # After the last retry, hand back the real response (e.g. 429 + reason) instead of
-        # raising a generic RetryError, so errors say what the provider actually returned.
+        # return the final response instead of raising RetryError, so errors keep the provider's reason
         raise_on_status=False,
     )
     s = requests.Session()

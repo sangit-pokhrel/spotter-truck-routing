@@ -57,7 +57,6 @@ export function mileAtHour(checkpoints: Checkpoint[], hours: number): number | n
   return span > 0 ? a.mile + ((hours - a.hours_from_departure) / span) * (b.mile - a.mile) : a.mile;
 }
 
-/** Where the truck is `hours` after departure, or null before departure / after arrival. */
 export function truckPosition(route: RouteOption, path: RoutePath, hours: number): LatLng | null {
   const mile = mileAtHour(route.checkpoints, hours);
   return mile === null ? null : pointAtMile(route, path, mile);

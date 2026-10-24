@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -6,11 +6,11 @@ from trips.services.planner import apply_weather, build_checkpoints, risk_segmen
 from trips.services.routing import Route
 from trips.services.weather import Forecast, snap
 
-DEPARTURE = datetime(2026, 1, 1, 6, 0, tzinfo=timezone.utc)
+DEPARTURE = datetime(2026, 1, 1, 6, 0, tzinfo=UTC)
 
 
 def straight_route(miles=100.0, mph=50.0, pieces=10):
-    """Northbound route made of equal segments; 1° latitude ≈ 69 mi."""
+    """Northbound route made of equal segments; 1 deg latitude ~ 69 mi."""
     step = miles / pieces
     points = [(30 + i * step / 69.0, -100.0) for i in range(pieces + 1)]
     return Route(points=points, seg_miles=[step] * pieces, seg_hours=[step / mph] * pieces)
@@ -64,7 +64,7 @@ def test_summary_counts_miles_per_level_and_unknown():
     apply_weather(cps, DEPARTURE, forecasts, load_weight_lb=35_000)
 
     ev = summarize("A", route, cps)
-    assert ev.miles_by_level["no_travel"] == pytest.approx(25)  # 45–54 mph with > 30,000 lb
+    assert ev.miles_by_level["no_travel"] == pytest.approx(25)  # 45-54 mph with > 30,000 lb
     assert ev.miles_by_level["unknown"] == pytest.approx(12.5)
     assert ev.miles_by_level["low"] == pytest.approx(62.5)
     assert ev.avg_risk == pytest.approx(4 * 25 / 87.5)

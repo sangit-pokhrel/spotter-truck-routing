@@ -12,24 +12,20 @@ export const LIVE_INTERVAL_MIN = 15;
 /** When the app returns to the foreground, re-check if the last update is older than this. */
 const LIVE_STALE_MS = 5 * 60_000;
 
-/** When the server is still looking up posted speed limits, plan the same trip again after this. */
+/** Re-plan delay while the server is still fetching speed limits. */
 const REFINE_DELAY_MS = 12_000;
 const MAX_REFINES = 4;
 
-/** How the current plan came to be: typed in, refreshed by live mode, re-timed with posted
- *  speed limits, or reopened from the device. */
+/** Where the current plan came from. */
 export type PlanKind = "manual" | "recheck" | "refine" | "restored";
 
-/**
- * Everything about the driver's current trip that isn't layout:
- * planning, live re-checks from GPS, risk alerts, offline persistence and connectivity.
- */
+/** Trip state outside the layout: planning, live re-checks, alerts, the offline copy, connectivity. */
 export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => void) {
   const trip = useTripPlan();
   const plan = trip.data;
   const online = useOnline();
 
-  // Reopen the last trip so it's there with no signal (read once on startup).
+  // last trip saved on the device, read once
   const [saved] = useState(loadSavedTrip);
   const restored = useRef(saved?.plan ?? null);
   const heatPreset = useMemo(() => (saved?.heatmap ? { plan: saved.plan, heatmap: saved.heatmap } : null), [saved]);
@@ -47,7 +43,7 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
   const refines = useRef(0);
   const refineTimer = useRef<number | undefined>(undefined);
 
-  /** Every plan request goes through here so a later refine repeats exactly the same trip. */
+  /** All requests go through here so a refine repeats the exact same trip. */
   const runPlan = useCallback(
     (body: PlanRequest) => {
       window.clearTimeout(refineTimer.current);
@@ -95,7 +91,7 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
     if (on && !granted) setLiveNote("Notifications are blocked. Allow them in your browser settings to get alerts.");
   }, []);
 
-  // React to every new plan: work out its kind, compare with the previous one, alert if worse.
+  // classify each new plan, compare it with the previous one, alert if worse
   useEffect(() => {
     if (!plan) return;
     let kind: PlanKind = "manual";
@@ -120,9 +116,14 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
     }
     onNewPlan(plan, kind);
 
-    // Posted speed limits still being looked up in the background: plan the same trip again
+    // Limits still loading: re-plan shortly (routes and weather are cached by then).
     // shortly (routes and weather are cached by then) to get the refined ETAs.
-    if (plan.speed_limits === "pending" && kind !== "restored" && refines.current < MAX_REFINES && currentRequest.current) {
+    if (
+      plan.speed_limits === "pending" &&
+      kind !== "restored" &&
+      refines.current < MAX_REFINES &&
+      currentRequest.current
+    ) {
       const body = currentRequest.current;
       refineTimer.current = window.setTimeout(() => {
         if (!navigator.onLine) return;
@@ -136,13 +137,13 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
 
   useEffect(() => () => window.clearTimeout(refineTimer.current), []);
 
-  // Persist new plans (and their heatmap once it arrives) for offline use.
+  // keep the latest plan and heatmap for offline use
   useEffect(() => {
     if (!plan || plan === restored.current) return;
     saveTrip({ plan, request: lastRequest, heatmap: heat.data, savedAt: Date.now() });
   }, [plan, heat.data]);
 
-  // Live timers call the latest `recheck` without being reset every render.
+  // timers call the latest `recheck` without being reset each render
   const recheckRef = useRef(recheck);
   recheckRef.current = recheck;
   const updatedRef = useRef(updatedAt);
@@ -152,14 +153,14 @@ export function useTripSession(onNewPlan: (plan: TripPlan, kind: PlanKind) => vo
     if (!live) return;
     recheckRef.current();
     const id = window.setInterval(() => recheckRef.current(), LIVE_INTERVAL_MIN * 60_000);
-    // Phones pause timers in the background; catch up when the driver looks again or signal returns.
+    // phones pause timers in the background; catch up on return or reconnect
     const catchUp = () => {
       const last = updatedRef.current?.getTime() ?? 0;
       if (document.visibilityState === "visible" && Date.now() - last > LIVE_STALE_MS) recheckRef.current();
     };
     document.addEventListener("visibilitychange", catchUp);
     window.addEventListener("online", catchUp);
-    // Keep a mounted phone's screen on while live (best effort; unsupported browsers ignore it).
+    // keep a mounted phone's screen on (best effort)
     let lock: WakeLockSentinel | null = null;
     navigator.wakeLock
       ?.request("screen")

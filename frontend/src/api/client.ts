@@ -30,9 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-/** Sent by the API when its own weather fetch is rate-limited: the browser performs this
- *  Open-Meteo query (with its own IP/quota) and repeats the request with the raw data.
- *  All risk logic stays on the server. */
+/** The API couldn't fetch weather itself (rate-limited): run this Open-Meteo query and resend. */
 interface WeatherRequest {
   url: string;
   params: Record<string, string>;
@@ -41,7 +39,7 @@ interface WeatherRequest {
 }
 
 const WEATHER_PARALLEL = 4;
-/** Waits before each retry; Open-Meteo's free tier limits calls per minute per IP. */
+// backoff between retries; the free tier limits calls per minute
 const WEATHER_RETRY_MS = [1500, 4000];
 
 interface WeatherItem {
@@ -49,12 +47,16 @@ interface WeatherItem {
   hourly_units: Record<string, string>;
 }
 
-/** Per-tab cache keyed by location + time window, so replans and the heatmap reuse forecasts. */
+// keyed by location and time window so re-plans reuse forecasts
 const weatherCache = new Map<string, WeatherItem>();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchBatch(req: WeatherRequest, batch: [number, number][], signal?: AbortSignal): Promise<WeatherItem[]> {
+async function fetchBatch(
+  req: WeatherRequest,
+  batch: [number, number][],
+  signal?: AbortSignal,
+): Promise<WeatherItem[]> {
   const query = new URLSearchParams({
     ...req.params,
     latitude: batch.map(([lat]) => lat.toFixed(4)).join(","),
@@ -70,8 +72,11 @@ async function fetchBatch(req: WeatherRequest, batch: [number, number][], signal
         const items: { hourly: Record<string, unknown>; hourly_units?: Record<string, string> }[] = Array.isArray(body)
           ? body
           : [body];
-        // Only the series the server reads; `time` is implied by start_hour.
-        return items.map(({ hourly: { time: _time, ...hourly }, hourly_units }) => ({ hourly, hourly_units: hourly_units ?? {} }));
+        // `time` is implied by start_hour
+        return items.map(({ hourly: { time: _time, ...hourly }, hourly_units }) => ({
+          hourly,
+          hourly_units: hourly_units ?? {},
+        }));
       }
       reason = body?.reason;
     } catch (err) {
@@ -82,7 +87,8 @@ async function fetchBatch(req: WeatherRequest, batch: [number, number][], signal
 }
 
 async function fetchWeather(req: WeatherRequest, signal?: AbortSignal) {
-  const keyOf = ([lat, lon]: [number, number]) => `${lat.toFixed(4)},${lon.toFixed(4)}|${req.params.start_hour}|${req.params.end_hour}`;
+  const keyOf = ([lat, lon]: [number, number]) =>
+    `${lat.toFixed(4)},${lon.toFixed(4)}|${req.params.start_hour}|${req.params.end_hour}`;
   const missing = req.locations.filter((loc) => !weatherCache.has(keyOf(loc)));
 
   const batches: [number, number][][] = [];

@@ -23,7 +23,17 @@ function ago(date: Date, now: number): string {
   return `${Math.round(min / 60)} h ago`;
 }
 
-function Switch({ checked, onChange, label, hint }: { checked: boolean; onChange: (on: boolean) => void; label: string; hint: string }) {
+function Switch({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  label: string;
+  hint: string;
+}) {
   return (
     <label className="switch">
       <input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
@@ -36,7 +46,7 @@ function Switch({ checked, onChange, label, hint }: { checked: boolean; onChange
   );
 }
 
-/** Driving mode: re-plan from the truck's GPS position on a timer so the risk ahead stays current. */
+/** Live mode: re-plans from the phone's GPS on a timer. */
 export function LiveBar(props: Props) {
   const { live, onToggle, onRecheck, busy, offline, updatedAt, intervalMin, change, note, alerts, onAlerts } = props;
   const [now, setNow] = useState(() => Date.now());

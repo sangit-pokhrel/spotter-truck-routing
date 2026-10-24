@@ -1,4 +1,4 @@
-# One-click deploy on Render: New → Blueprint → point at this repo.
+# Render blueprint: New > Blueprint, then pick this repo.
 services:
   - type: web
     name: spotter-truck-routing
@@ -9,10 +9,12 @@ services:
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_ALLOWED_HOSTS
-        value: .onrender.com
+        value: .onrender.com,localhost,127.0.0.1
+      # Render's proxy sits in front: count real clients for rate limiting
+      - key: TRUSTED_PROXIES
+        value: "1"
       - key: WEB_CONCURRENCY
         value: "2"
-      # Open-Meteo rate-limits Render's shared egress IPs; let browsers fetch forecasts
-      # (risk logic still runs server-side). See backend/trips/services/weather.py.
+      # Render's shared IPs get throttled by Open-Meteo, so browsers fetch the forecasts
       - key: WEATHER_SOURCE
         value: client

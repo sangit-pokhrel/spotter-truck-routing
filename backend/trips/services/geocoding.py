@@ -1,4 +1,5 @@
 """Geocoding via Photon (OpenStreetMap data, no API key)."""
+
 from __future__ import annotations
 
 import hashlib

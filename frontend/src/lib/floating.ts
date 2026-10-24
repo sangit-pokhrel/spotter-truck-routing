@@ -6,12 +6,8 @@ import { milesDriven, nextHazard } from "./live";
 import { RISK_COLOR, RISK_LABEL } from "./risk";
 
 /**
- * A mini map that floats over other apps (like a navigation bubble).
- *
- * The web can't draw over other apps directly, but a <video> can go Picture-in-Picture.
- * We paint the map (real basemap tiles + risk-coloured route + truck + next hazard) on a
- * canvas, stream the canvas into a video and float that video. Supported in Chrome
- * (Android + desktop), Edge and Safari on macOS.
+ * Mini map that floats over other apps. A page can't draw over other apps, but a video can go
+ * picture-in-picture, so the map is painted on a canvas and streamed into a hidden video.
  */
 
 const W = 480;
@@ -156,7 +152,6 @@ export class FloatingView {
     route.segments.forEach((seg) => stroke(seg.coords, s.basemap === "light" ? "#14181f" : "#ffffff", 11));
     route.segments.forEach((seg) => stroke(seg.coords, RISK_COLOR[seg.level], 6));
 
-    // Truck
     ctx.beginPath();
     ctx.arc(W / 2, H / 2, 10, 0, Math.PI * 2);
     ctx.fillStyle = "#14181f";
@@ -197,9 +192,10 @@ export class FloatingView {
     ctx.font = "13px 'IBM Plex Sans', system-ui, sans-serif";
     ctx.fillStyle = "#c5ccd4";
     const remaining = formatMiles(Math.max(0, route.distance_mi - mile));
-    const detail = hazard && !done
-      ? `at ${formatClock(hazard.checkpoint.eta)} · ${hazard.checkpoint.factors[0] ?? ""}`
-      : `Route ${route.id} · ${remaining} to go`;
+    const detail =
+      hazard && !done
+        ? `at ${formatClock(hazard.checkpoint.eta)} · ${hazard.checkpoint.factors[0] ?? ""}`
+        : `Route ${route.id} · ${remaining} to go`;
     ctx.fillText(detail.slice(0, 64), 14, 44);
   }
 

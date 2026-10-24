@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { HeatMetric, TripPlan } from "./api/types";
+import type { Checkpoint, HeatMetric, TripPlan } from "./api/types";
 import { CheckpointList } from "./components/CheckpointList";
 import { ForecastBar } from "./components/ForecastBar";
 import { LiveBar } from "./components/LiveBar";
@@ -7,6 +7,7 @@ import { MapView, type FocusedCheckpoint, type HeatOverlay } from "./components/
 import { RouteComparison } from "./components/RouteComparison";
 import { RouteProfile } from "./components/RouteProfile";
 import { TripForm } from "./components/TripForm";
+import { RouteCard } from "./components/RouteCard";
 import { TripSummary } from "./components/TripSummary";
 import { COMPACT_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { LIVE_INTERVAL_MIN, useTripSession, type PlanKind } from "./hooks/useTripSession";
@@ -26,6 +27,7 @@ export default function App() {
   const [hoveredMile, setHoveredMile] = useState<number | null>(null);
   const [basemap, setBasemap] = useState<BasemapId>(loadBasemap);
   const [fitKey, setFitKey] = useState(0);
+  const [expandedRoute, setExpandedRoute] = useState<string | null>(null); // tapped A/B/C badge
   const [editing, setEditing] = useState(true);
   const compact = useMediaQuery(COMPACT_QUERY);
 
@@ -34,10 +36,11 @@ export default function App() {
       setSelectedId(plan.recommended_route);
       setHour(0);
       setFocused(null);
+      setExpandedRoute(null);
       setHoveredMile(null);
-      if (kind === "recheck" || kind === "refine") return; // background refresh: keep the driver's view
+      if (kind === "recheck" || kind === "refine") return; // background refresh: leave the view alone
       setEditing(false);
-      // Phones: the map moves to the top once there are results; bring it into view.
+      // on phones the map sits at the top once there are results
       if (kind === "manual" && compact) window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [compact],
@@ -45,7 +48,7 @@ export default function App() {
   const session = useTripSession(onNewPlan);
   const { plan, heat } = session;
 
-  // Frames are rendered once per (heatmap, metric) and reused while scrubbing.
+  // frames are rendered once per layer and reused while scrubbing
   const frameCache = useMemo(() => new Map<HeatMetric, string[]>(), [heat.data]);
   const frames = useMemo(() => {
     if (!heat.data) return null;
@@ -56,10 +59,22 @@ export default function App() {
   const overlay: HeatOverlay | null = useMemo(() => {
     if (!heat.data || !frames) return null;
     const { south, west, north, east } = heat.data.grid;
-    return { url: frames[hour], bounds: [[south, west], [north, east]] };
+    return {
+      url: frames[hour],
+      bounds: [
+        [south, west],
+        [north, east],
+      ],
+    };
   }, [heat.data, frames, hour]);
 
   const selected = plan?.routes.find((r) => r.id === selectedId) ?? null;
+  const selectedName = selected?.name;
+  // stable so the memoised checkpoint table doesn't re-render on every hover frame
+  const focusCheckpoint = useCallback(
+    (cp: Checkpoint) => selectedName && setFocused({ cp, routeName: selectedName }),
+    [selectedName],
+  );
   const path = useMemo(() => (selected ? routePath(selected) : null), [selected]);
   const truck = selected && path ? truckPosition(selected, path, hour) : null;
   const hoverPoint = selected && path && hoveredMile !== null ? pointAtMile(selected, path, hoveredMile) : null;
@@ -72,7 +87,7 @@ export default function App() {
     saveBasemap(id);
   };
 
-  // --- Floating mini map (Picture-in-Picture over other apps)
+  // picture-in-picture mini map
   const floating = useRef<FloatingView | null>(null);
   const [floatingOpen, setFloatingOpen] = useState(false);
   const toggleFloating = async () => {
@@ -99,7 +114,7 @@ export default function App() {
   }, [plan, selected, basemap]);
   useEffect(() => () => void floating.current?.close(), []);
 
-  // --- "Install app" button when the browser offers it
+  // offered when the browser supports installing
   const [installable, setInstallable] = useState(canInstall);
   useEffect(() => onInstallAvailabilityChange(() => setInstallable(canInstall())), []);
 
@@ -206,14 +221,13 @@ export default function App() {
 
               {selected && (
                 <section className="section section-fill s-checkpoints">
-                  {/* Collapsed by default on phones to keep the page short. */}
                   <details open={!compact} key={String(compact)}>
                     <summary className="section-title">
                       Route {selected.id} checkpoints <span className="muted">{selected.checkpoints.length}</span>
                     </summary>
                     <CheckpointList
                       checkpoints={selected.checkpoints}
-                      onFocus={(cp) => setFocused({ cp, routeName: selected.name })}
+                      onFocus={focusCheckpoint}
                       onHover={setHoveredMile}
                     />
                   </details>
@@ -248,12 +262,20 @@ export default function App() {
               onFocus={setFocused}
               basemap={basemap}
               fitKey={fitKey}
+              expandedId={expandedRoute}
+              onExpand={setExpandedRoute}
+              inlineDetails={!compact}
             />
             <div className="map-toolbar">
               <div className="seg seg-sm seg-map" role="radiogroup" aria-label="Base map">
                 {Object.values(BASEMAPS).map((b) => (
                   <label key={b.id} className={basemap === b.id ? "on" : undefined}>
-                    <input type="radio" name="basemap" checked={basemap === b.id} onChange={() => chooseBasemap(b.id)} />
+                    <input
+                      type="radio"
+                      name="basemap"
+                      checked={basemap === b.id}
+                      onChange={() => chooseBasemap(b.id)}
+                    />
                     {b.label}
                   </label>
                 ))}
@@ -275,13 +297,22 @@ export default function App() {
                 </button>
               )}
             </div>
+            {compact && plan && expandedRoute && (
+              <RouteCard
+                route={plan.routes.find((r) => r.id === expandedRoute)!}
+                recommended={expandedRoute === plan.recommended_route}
+                onClose={() => setExpandedRoute(null)}
+              />
+            )}
             {session.loading && (
               <div className="map-status" role="status">
                 <span className="progress" aria-hidden />
                 Routing and checking forecasts at every checkpoint…
               </div>
             )}
-            {!plan && !session.loading && <div className="map-empty">Plan a trip to compare routes by weather risk</div>}
+            {!plan && !session.loading && (
+              <div className="map-empty">Plan a trip to compare routes by weather risk</div>
+            )}
           </div>
 
           {plan && selected && (

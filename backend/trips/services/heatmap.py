@@ -1,11 +1,9 @@
-"""Weather heatmap along the trip corridor for the next 0–48 forecast hours.
+"""Corridor weather grid for the 0-48 h heatmap.
 
-The corridor is rasterised on a grid whose columns are even in longitude and whose rows are
-even in Web-Mercator Y. That way the client can paint one pixel per cell onto a tiny canvas
-and drop it on the map as an image overlay with no reprojection error. The browser's bilinear
-scaling then produces a smooth heatmap, and every hour is pre-computed, so the slider never
-waits on the network.
+Columns are evenly spaced in longitude and rows in Web Mercator Y, so the client can paint one
+pixel per cell into an image overlay without reprojecting.
 """
+
 from __future__ import annotations
 
 import math
@@ -17,13 +15,13 @@ from .risk import assess
 from .weather import resolve_forecasts, snap
 
 CORRIDOR_HALF_WIDTH_MI = 40.0
-MAX_CELLS = 300  # each cell is one forecast location; keeps a trip well under per-minute quotas
+MAX_CELLS = 300  # one forecast location per cell
 MIN_SPACING_MI = 8.0
 MILES_PER_DEG_LAT = 69.0
 
 
 class _CorridorIndex:
-    """Spatial hash for "is this point within W miles of the route corridor?"."""
+    """Spatial hash answering: is this point within `radius_mi` of the corridor?"""
 
     def __init__(self, points: list[LatLon], radius_mi: float):
         self.radius = radius_mi
@@ -37,7 +35,7 @@ class _CorridorIndex:
 
     def contains(self, p: LatLon) -> bool:
         ky, kx = self._key(p)
-        # Longitude degrees shrink with latitude, so widen the x search accordingly.
+        # a degree of longitude shrinks with latitude, so search wider in x
         span_x = math.ceil(1 / max(math.cos(math.radians(p[0])), 0.2))
         kx_lat = math.cos(math.radians(p[0]))
         for dy in (-1, 0, 1):
@@ -62,12 +60,12 @@ def build_grid(corridor: list[LatLon]) -> tuple[dict, list[tuple[int, LatLon]]]:
     west, east = min(lons) - pad_lon, max(lons) + pad_lon
     y_top, y_bottom = mercator_y(north), mercator_y(south)
 
-    # Start just under the spacing implied by the corridor's (over-)estimated area, then grow.
+    # start a little below the spacing the corridor area suggests, then grow
     area_estimate = len(corridor) * CORRIDOR_STEP_MI * 2 * CORRIDOR_HALF_WIDTH_MI
     spacing = max(MIN_SPACING_MI, 0.6 * math.sqrt(area_estimate / MAX_CELLS))
     while True:
         dlon = spacing / (MILES_PER_DEG_LAT * mid_cos)
-        dy = math.radians(dlon)  # Mercator is conformal: equal x/y steps ⇒ square cells
+        dy = math.radians(dlon)  # equal steps in x and Mercator y give square cells
         cols = max(1, math.ceil((east - west) / dlon))
         rows = max(1, math.ceil((y_top - y_bottom) / dy))
         cells = []

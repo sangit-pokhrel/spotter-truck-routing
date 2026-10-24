@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type { RiskKey, RouteOption } from "../api/types";
 import { formatEta, formatMiles } from "../lib/format";
 import { checkpointAtMile, mileAtHour } from "../lib/geo";
@@ -17,7 +17,7 @@ interface Band {
   level: RiskKey;
 }
 
-/** Road split into stretches by the checkpoint that represents them (same as the backend). */
+/** One stretch per checkpoint, merged when neighbours share a level (as on the backend). */
 function bands(route: RouteOption): Band[] {
   const out: Band[] = [];
   let from = 0;
@@ -40,7 +40,6 @@ function hourStep(duration: number): number {
 
 const pct = (mile: number, total: number) => `${(Math.min(Math.max(mile / total, 0), 1) * 100).toFixed(3)}%`;
 
-/** Weather along the selected route, laid out by road mile with ETA ticks. */
 export const RouteProfile = memo(function RouteProfile({ route, hour, hoveredMile, onHoverMile }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const total = route.distance_mi || 1;
@@ -50,7 +49,7 @@ export const RouteProfile = memo(function RouteProfile({ route, hour, hoveredMil
     const out: { h: number; mile: number }[] = [];
     for (let h = step; h < route.duration_h; h += step) {
       const mile = mileAtHour(route.checkpoints, h);
-      // Keep clear of the "0" and total-distance labels at the ends.
+      // keep clear of the labels at both ends
       if (mile !== null && mile / total > 0.05 && mile / total < 0.85) out.push({ h, mile });
     }
     return out;
@@ -59,14 +58,31 @@ export const RouteProfile = memo(function RouteProfile({ route, hour, hoveredMil
   const truckMile = mileAtHour(route.checkpoints, hour);
   const hovered = hoveredMile === null ? null : checkpointAtMile(route.checkpoints, hoveredMile);
 
+  // Pointer events can fire well above 60/s; update at most once per frame.
+  const frame = useRef(0);
+  const pending = useRef<number | null>(null);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+
   const onMove = (e: React.PointerEvent) => {
     const rect = ref.current!.getBoundingClientRect();
-    onHoverMile(((e.clientX - rect.left) / rect.width) * total);
+    pending.current = ((e.clientX - rect.left) / rect.width) * total;
+    if (!frame.current) {
+      frame.current = requestAnimationFrame(() => {
+        frame.current = 0;
+        onHoverMile(pending.current);
+      });
+    }
+  };
+
+  const onLeave = () => {
+    cancelAnimationFrame(frame.current);
+    frame.current = 0;
+    onHoverMile(null);
   };
 
   return (
     <div className="profile">
-      <div className="profile-track" ref={ref} onPointerMove={onMove} onPointerLeave={() => onHoverMile(null)}>
+      <div className="profile-track" ref={ref} onPointerMove={onMove} onPointerLeave={onLeave}>
         {stretches.map((b) => (
           <span
             key={b.from}

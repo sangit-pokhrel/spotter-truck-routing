@@ -13,12 +13,15 @@ function num(v: number | null, digits: number): string {
   return v === null ? "–" : v.toFixed(digits);
 }
 
-/** The limit a truck must obey: the posted limit, or a lower state truck limit (marked). */
+/** Posted limit, or the state truck limit when that's lower. */
 function TruckLimit({ cp }: { cp: Checkpoint }) {
   const truck = cp.truck_limit_mph;
   if (truck !== null && (cp.speed_limit_mph === null || truck < cp.speed_limit_mph)) {
     return (
-      <span className="truck-limit" title={`State truck limit${cp.speed_limit_mph ? ` (posted ${cp.speed_limit_mph})` : ""}`}>
+      <span
+        className="truck-limit"
+        title={`State truck limit${cp.speed_limit_mph ? ` (posted ${cp.speed_limit_mph})` : ""}`}
+      >
         {truck} <small>truck</small>
       </span>
     );

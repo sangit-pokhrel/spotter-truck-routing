@@ -1,33 +1,14 @@
-"""Posted speed limits along a route, and truck travel times that respect them.
+"""Posted speed limits along routes, and truck travel times that respect them.
 
-OSRM's car profile gives a duration per road segment but no legal limit, and a car's speed
-isn't a loaded truck's. We map-match routes against Valhalla (`trace_attributes`, public FOSSGIS
-instance, OpenStreetMap `maxspeed` data) to get the posted limit and road class, then time each
-segment as a truck would drive it:
+Limits come from Valhalla's trace_attributes (OpenStreetMap maxspeed). Highways are driven at the
+lower of the posted limit and the truck's governed speed; other roads keep OSRM's slower estimate
+but never exceed the limit. State truck limits (truck_rules) lower the cap further.
 
-* motorway / trunk: the lower of the posted limit and the truck's governed speed
-  (fleet trucks are usually limited to ~65 mph, so a 75 mph interstate is driven at 65);
-* other roads: OSRM's estimate (it includes turns and intersections), but never faster than
-  the posted limit or the governed speed;
-* no limit known: OSRM's estimate capped at the governed speed.
-
-On top of that, **state truck speed limits** (e.g. California's 55 mph for trucks, statewide by
-statute, see truck_rules.py) lower the cap for every segment in those states, whether or not
-the posted limit is known.
-
-Speed and politeness
---------------------
-The public Valhalla server allows ~1 request/s and ≤ 200 km per request, so a long trip needs
-many requests. To keep plans fast:
-
-* Limits are cached **spatially** (≈500 m cells × road direction, grouped into 0.1° tiles), not
-  per route, so any later route over the same roads (the other options, live re-checks from
-  GPS, other users) reuses them without calling Valhalla.
-* A plan never waits for Valhalla: it uses what's known, missing stretches are fetched in a
-  background thread (2 at a time, backing off on 429), and the response says `"pending"` so
-  the client can refresh the ETAs a little later.
-* A failed stretch cools down for a few minutes instead of being retried on every request.
+The public Valhalla instance allows about 1 request/s and 200 km per request, so limits are cached
+per map cell and direction (any route on the same road reuses them), missing stretches are
+fetched in a background thread, and failed stretches back off for a few minutes.
 """
+
 from __future__ import annotations
 
 import bisect
@@ -51,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_MI = 5.0  # must stay < ~6 mi: Valhalla rejects gaps over 10 km
 CHUNK_MI = 115.0  # Valhalla's public limit is 200 km per trace
-MAX_PARALLEL = 2  # the public server allows ~1 req/s
 RATE_LIMIT_BACKOFF_S = 3.0
 TILE_DEG = 0.1
 CELL_DEG = 0.005  # ~500 m
@@ -65,7 +45,7 @@ APPLIED, PENDING, UNAVAILABLE, DISABLED = "applied", "pending", "unavailable", "
 
 _inflight: set[str] = set()
 _inflight_lock = threading.Lock()
-_store_lock = threading.Lock()  # tiles are read-modify-write; background workers share them
+_store_lock = threading.Lock()  # tiles are read-modify-written by background threads
 
 
 @dataclass(frozen=True)
@@ -78,11 +58,10 @@ class Stretch:
     road_class: str | None
 
 
-# --- truck timing -------------------------------------------------------------------------
-
-
-def truck_hours(miles: float, osrm_hours: float, limit_mph: float | None, road_class: str | None, governed_mph: float) -> float:
-    """Time for a truck to drive one road segment (see module docstring for the rule)."""
+def truck_hours(
+    miles: float, osrm_hours: float, limit_mph: float | None, road_class: str | None, governed_mph: float
+) -> float:
+    """Hours for a truck to drive one segment."""
     floor = miles / governed_mph  # never faster than the truck can go
     if not limit_mph:
         return max(osrm_hours, floor)
@@ -92,13 +71,11 @@ def truck_hours(miles: float, osrm_hours: float, limit_mph: float | None, road_c
     return max(osrm_hours, miles / legal)
 
 
-# --- spatial cache ------------------------------------------------------------------------
-
 Known = tuple[float, str | None]  # (limit mph, 0 = looked up but not posted; road class)
 
 
 def _cell(lat: float, lon: float, bearing_bucket: int) -> tuple[str, str]:
-    """(tile cache key, cell key): ~500 m cell plus direction of travel (crossing roads differ)."""
+    """(tile key, cell key) for a ~500 m cell and direction of travel."""
     tile = f"lim:v1:{math.floor(lat / TILE_DEG)}:{math.floor(lon / TILE_DEG)}"
     return tile, f"{math.floor(lat / CELL_DEG)}:{math.floor(lon / CELL_DEG)}:{bearing_bucket}"
 
@@ -120,10 +97,10 @@ def _known(route: Route) -> list[Known | None]:
 
 
 def _store(route: Route, stretches: list[Stretch], start_mi: float, end_mi: float) -> None:
-    """Record limits for every cell the route passes through between start_mi and end_mi.
+    """Store limits for every cell the route crosses between start_mi and end_mi.
 
-    Each segment is rasterised every ~half a cell (not just its midpoint), so any later route
-    over the same road, however its points are spaced, finds the limit at its own midpoints.
+    Segments are sampled every half cell, not just at their midpoint, so a later route over the
+    same road finds the limit whatever its point spacing.
     """
     if not stretches:
         return
@@ -141,7 +118,10 @@ def _store(route: Route, stretches: list[Stretch], start_mi: float, end_mi: floa
             if not start_mi <= mile <= end_mi:
                 continue
             s = stretches[max(0, bisect.bisect_right(starts, mile) - 1)]
-            entries[_cell(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, bucket)] = (s.limit_mph or 0.0, s.road_class)
+            entries[_cell(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, bucket)] = (
+                s.limit_mph or 0.0,
+                s.road_class,
+            )
     if not entries:
         return
     with _store_lock:
@@ -150,9 +130,6 @@ def _store(route: Route, stretches: list[Stretch], start_mi: float, end_mi: floa
         for (tile, cell), value in entries.items():
             changed.setdefault(tile, dict(tiles.get(tile, {})))[cell] = value
         cache.set_many(changed, CACHE_TTL_S)
-
-
-# --- Valhalla lookups ---------------------------------------------------------------------
 
 
 def _chunks(route: Route) -> list[tuple[list[tuple[float, float]], float, float]]:
@@ -249,7 +226,7 @@ def _start(jobs: list[tuple], wait: bool) -> bool:
         others_running = any(j[4] in _inflight for j in jobs if j not in mine)
 
     def run_all():
-        with ThreadPoolExecutor(max_workers=MAX_PARALLEL) as pool:
+        with ThreadPoolExecutor(max_workers=settings.TRUCK_ROUTING["SPEED_LIMITS_PARALLEL"]) as pool:
             list(pool.map(lambda j: _run_job(*j), mine))
 
     if mine:
@@ -258,9 +235,6 @@ def _start(jobs: list[tuple], wait: bool) -> bool:
         else:
             threading.Thread(target=run_all, name="speed-limits", daemon=True).start()
     return (bool(mine) and not wait) or others_running
-
-
-# --- public API ---------------------------------------------------------------------------
 
 
 def apply_known_limits(route: Route, known: list[Known | None], governed_mph: float) -> float:
@@ -285,10 +259,9 @@ def apply_known_limits(route: Route, known: list[Known | None], governed_mph: fl
 
 
 def enrich_routes(routes: list[Route], wait: bool = False) -> str:
-    """Apply posted speed limits to every route's ETAs. Returns applied/pending/unavailable/disabled.
+    """Re-time routes with known limits; returns applied/pending/unavailable/disabled.
 
-    With wait=False (the API default), missing limits are fetched in the background and the
-    plan uses whatever is already known.
+    Missing limits are fetched in the background unless `wait` is set.
     """
     cfg = settings.TRUCK_ROUTING
     if not routes:

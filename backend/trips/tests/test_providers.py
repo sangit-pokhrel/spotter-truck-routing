@@ -1,5 +1,6 @@
 """Provider clients with HTTP mocked out."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from unittest import mock
 
 import pytest
@@ -44,7 +45,7 @@ def test_select_distinct_drops_duplicates_and_long_detours():
     base = line(0)
     duplicate = line(0.001)
     distinct = line(1.0)
-    detour = Route(points=line(3.0).points, seg_miles=base.seg_miles, seg_hours=[0.2] * 49)  # 2× slower
+    detour = Route(points=line(3.0).points, seg_miles=base.seg_miles, seg_hours=[0.2] * 49)  # 2x slower
     chosen = select_distinct([base, duplicate, distinct, detour], count=3)
     assert chosen == [base, distinct]
 
@@ -70,11 +71,11 @@ def test_spur_through_via_point_is_rejected():
     route.seg_miles = [200 / 29] * 29
     route.via_mile = 100
     window = routing.spur_window(route)
-    assert window == (75, 125)  # ±25 mi floor (10% of 200 mi = 20 mi)
+    assert window == (75, 125)  # +/-25 mi floor (10% of 200 mi = 20 mi)
 
     straight_road = lambda a, b: 50.0  # noqa: E731 - fastest road between window ends
     assert routing.is_locally_optimal(route, fastest_between=straight_road)
-    spur_road = lambda a, b: 50.0 / 1.5  # noqa: E731 - window is 1.5× the direct road
+    spur_road = lambda a, b: 50.0 / 1.5  # noqa: E731 - window is 1.5x the direct road
     assert not routing.is_locally_optimal(route, fastest_between=spur_road)
 
 
@@ -100,7 +101,7 @@ def test_parse_coordinates():
 
 
 def test_weather_batches_converts_units_and_caches():
-    start = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    start = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     points = [(40 + i * 0.1, -100.0) for i in range(150)]
 
     def fake_get_json(url, params, provider):
@@ -119,12 +120,12 @@ def test_weather_batches_converts_units_and_caches():
 
     with mock.patch.object(weather, "get_json", side_effect=fake_get_json) as m:
         result = weather.get_forecasts(points, start, start)
-        assert m.call_count == 2  # 150 locations → batches of 100 + 50
+        assert m.call_count == 2  # 150 locations -> batches of 100 + 50
         weather.get_forecasts(points, start, start)
         assert m.call_count == 2  # second call fully served from cache
 
     sample = result[weather.snap(points[0])].at(start)
     assert sample.wind_mph == pytest.approx(62.1371)
-    assert sample.rain_in_hr == pytest.approx(2.0)  # rain + showers, mm → in
+    assert sample.rain_in_hr == pytest.approx(2.0)  # rain + showers, mm -> in
     assert sample.snow_in_hr == pytest.approx(1.0)
     assert result[weather.snap(points[0])].wind[1] is None

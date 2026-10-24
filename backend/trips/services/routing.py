@@ -1,11 +1,10 @@
 """Route options from OSRM.
 
-OSRM's `alternatives` usually yields 1–2 routes. To always offer three genuinely different
-options we also route through via-points pushed perpendicular to the origin→destination line,
-then keep candidates that are (a) not near-duplicates of an already chosen route,
-(b) not absurd detours and (c) locally optimal around the via-point. (c) rejects "spurs" where
-the via-point snapped onto a side road and the route drives out to it and straight back.
+OSRM rarely returns more than two alternatives, so extra candidates are routed through via-points
+offset from the straight line. A candidate is dropped if it mostly overlaps a route already
+chosen, is much slower than the fastest, or doubles back on itself around its via-point.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -22,17 +21,22 @@ from .http import ProviderError, get_json
 
 logger = logging.getLogger(__name__)
 
-# (fraction along origin→destination, perpendicular offset as fraction of the direct distance)
+# (position along the origin-destination line, sideways offset), as fractions of its length
 VIA_CANDIDATES: tuple[tuple[float, float], ...] = (
-    (0.5, 0.12), (0.5, -0.12), (0.5, 0.25), (0.5, -0.25), (0.35, 0.18), (0.65, -0.18),
+    (0.5, 0.12),
+    (0.5, -0.12),
+    (0.5, 0.25),
+    (0.5, -0.25),
+    (0.35, 0.18),
+    (0.65, -0.18),
 )
 VIA_ROUND_SIZE = 3
-MAX_DETOUR_RATIO = 1.6  # reject candidates slower than this × the fastest route
-DUPLICATE_OVERLAP = 0.8  # share of a route lying within OVERLAP_RADIUS of another
+MAX_DETOUR_RATIO = 1.6  # vs. the fastest route
+DUPLICATE_OVERLAP = 0.8  # share of a route within OVERLAP_RADIUS_MI of another
 OVERLAP_RADIUS_MI = 1.5
-# Local-optimality check: the stretch ±window around a via-point may be at most this much
-# longer than the fastest road between its two ends.
-SPUR_WINDOW_MI = (25.0, 75.0)  # clamp of 10% of the trip length
+# A via-route is rejected when the stretch around its via-point is this much longer than the
+# direct road between the stretch's ends (it drove out to the via-point and back).
+SPUR_WINDOW_MI = (25.0, 75.0)  # window half-width: 10% of the trip, clamped
 MAX_LOCAL_STRETCH = 1.25
 
 
@@ -40,11 +44,11 @@ MAX_LOCAL_STRETCH = 1.25
 class Route:
     points: list[LatLon]
     seg_miles: list[float]
-    seg_hours: list[float]  # truck travel time per segment (what ETAs use)
+    seg_hours: list[float]  # truck hours per segment, used for ETAs
     via_mile: float | None = None  # where the forced via-point sits, for via-routes
-    osrm_hours: list[float] | None = None  # OSRM's own (car-profile) estimate, before truck rules
-    seg_limits: list[float | None] | None = None  # posted speed limit per segment, mph, when known
-    seg_truck_limits: list[float | None] | None = None  # state truck speed limit per segment (e.g. CA 55)
+    osrm_hours: list[float] | None = None  # OSRM car-profile hours
+    seg_limits: list[float | None] | None = None  # posted limit (mph) when known
+    seg_truck_limits: list[float | None] | None = None  # state truck limit (mph)
 
     @property
     def distance_mi(self) -> float:
@@ -73,8 +77,8 @@ def _parse_route(raw: dict, max_speed_mph: float) -> Route:
         total_mi = sum(seg_miles) or 1.0
         seg_hours = [raw["duration"] / 3600 * m / total_mi for m in seg_miles]
 
-    # A loaded truck can't do 80 mph where a car profile might. Posted limits refine this later
-    # (speed_limits.apply_speed_limits); this cap is the fallback when no limit is known.
+    # Car-profile speeds are too fast for a loaded truck. speed_limits refines this when the
+    # posted limits are known.
     osrm_hours = seg_hours
     seg_hours = [max(h, m / max_speed_mph) for m, h in zip(seg_miles, seg_hours)]
     via_mile = raw["legs"][0]["distance"] / METERS_PER_MILE if len(raw["legs"]) > 1 else None
@@ -170,7 +174,12 @@ def select_distinct(candidates: list[Route], count: int) -> list[Route]:
 
 
 def find_routes(origin: LatLon, destination: LatLon, count: int = 3) -> list[Route]:
-    key = "routes:v2:" + hashlib.sha1(f"{origin[0]:.4f},{origin[1]:.4f};{destination[0]:.4f},{destination[1]:.4f};{count}".encode()).hexdigest()
+    key = (
+        "routes:v2:"
+        + hashlib.sha1(
+            f"{origin[0]:.4f},{origin[1]:.4f};{destination[0]:.4f},{destination[1]:.4f};{count}".encode()
+        ).hexdigest()
+    )
     if (cached := cache.get(key)) is not None:
         return cached
 
@@ -189,7 +198,7 @@ def find_routes(origin: LatLon, destination: LatLon, count: int = 3) -> list[Rou
             return None
 
     vias = [offset_point(origin, destination, along, side) for along, side in VIA_CANDIDATES]
-    # Rounds of 3 in parallel: usually one round is enough, and the public OSRM server throttles bursts.
+    # Small rounds: one is usually enough, and the public OSRM server throttles bursts.
     for start in range(0, len(vias), VIA_ROUND_SIZE):
         if len(chosen) >= count:
             break

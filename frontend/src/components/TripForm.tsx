@@ -9,7 +9,6 @@ const INTERVALS = [10, 25, 50] as const;
 type Interval = (typeof INTERVALS)[number];
 const MAX_DAYS_AHEAD = 7;
 
-/** One-tap departure choices so drivers rarely need the date picker. */
 const QUICK_DEPARTURES: { label: string; at: () => Date }[] = [
   { label: "Now", at: () => new Date() },
   { label: "+1 h", at: () => new Date(Date.now() + 3600_000) },
@@ -108,7 +107,13 @@ export function TripForm({ loading, onSubmit }: Props) {
           />
           <PlaceInput label="To" placeholder="City, address or lat,lon" value={destination} onChange={setDestination} />
         </div>
-        <button type="button" className="icon-btn od-swap" onClick={swap} aria-label="Swap origin and destination" title="Swap">
+        <button
+          type="button"
+          className="icon-btn od-swap"
+          onClick={swap}
+          aria-label="Swap origin and destination"
+          title="Swap"
+        >
           <svg viewBox="0 0 16 16" aria-hidden>
             <path d="M5 2v10M5 2 2.5 4.5M5 2l2.5 2.5M11 14V4m0 10-2.5-2.5M11 14l2.5-2.5" />
           </svg>
@@ -120,7 +125,12 @@ export function TripForm({ loading, onSubmit }: Props) {
         <label htmlFor="departure">Departure</label>
         <div className="chips" role="group" aria-label="Quick departure times">
           {QUICK_DEPARTURES.map((q) => (
-            <button key={q.label} type="button" className="chip" onClick={() => setDeparture(toLocalInputValue(q.at()))}>
+            <button
+              key={q.label}
+              type="button"
+              className="chip"
+              onClick={() => setDeparture(toLocalInputValue(q.at()))}
+            >
               {q.label}
             </button>
           ))}
@@ -158,7 +168,13 @@ export function TripForm({ loading, onSubmit }: Props) {
           <div className="seg">
             {INTERVALS.map((mi) => (
               <label key={mi} className={interval === mi ? "on" : undefined}>
-                <input type="radio" name="interval" value={mi} checked={interval === mi} onChange={() => setIntervalMiles(mi)} />
+                <input
+                  type="radio"
+                  name="interval"
+                  value={mi}
+                  checked={interval === mi}
+                  onChange={() => setIntervalMiles(mi)}
+                />
                 {mi}
               </label>
             ))}

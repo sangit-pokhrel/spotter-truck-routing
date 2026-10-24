@@ -1,4 +1,5 @@
-"""Small geodesy helpers. Coordinates are (lat, lon) tuples in degrees unless noted."""
+"""Geometry helpers. Points are (lat, lon) in degrees."""
+
 from __future__ import annotations
 
 import bisect
@@ -40,9 +41,9 @@ def interpolate(points: Sequence[LatLon], cum: Sequence[float], target: float) -
 
 
 def offset_point(a: LatLon, b: LatLon, along: float, side_fraction: float) -> LatLon:
-    """Point at fraction `along` of segment a→b, pushed perpendicular by side_fraction × |ab|.
+    """Point at fraction `along` of a->b, offset sideways by side_fraction * |ab|.
 
-    Uses a local equirectangular projection, good enough for picking detour via-points.
+    Flat-earth approximation; only used to place detour via-points.
     """
     kx = math.cos(math.radians((a[0] + b[0]) / 2))
     ax, ay = a[1] * kx, a[0]
@@ -62,7 +63,7 @@ def inverse_mercator_y(y: float) -> float:
 
 
 def simplify(points: Sequence[LatLon], tolerance_deg: float = 0.0004) -> list[LatLon]:
-    """Ramer–Douglas–Peucker (iterative) to shrink map payloads; ~0.0004° ≈ 40 m."""
+    """Iterative Ramer-Douglas-Peucker. The default tolerance is about 40 m."""
     if len(points) < 3:
         return list(points)
     keep = [False] * len(points)
@@ -76,10 +77,8 @@ def simplify(points: Sequence[LatLon], tolerance_deg: float = 0.0004) -> list[La
         worst, worst_idx = 0.0, -1
         for i in range(start + 1, end):
             py, px = points[i]
-            if norm == 0:
-                d = math.hypot(px - ax, py - ay)
-            else:
-                d = abs(dy * (px - ax) - dx * (py - ay)) / norm
+            # distance to the chord, or to its start when the chord has zero length
+            d = abs(dy * (px - ax) - dx * (py - ay)) / norm if norm else math.hypot(px - ax, py - ay)
             if d > worst:
                 worst, worst_idx = d, i
         if worst > tolerance_deg:

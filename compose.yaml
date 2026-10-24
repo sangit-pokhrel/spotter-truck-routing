@@ -1,0 +1,25 @@
+# Production image locally: docker compose up --build, then open http://localhost:8000
+# (the VPS stack is deploy/compose.yaml)
+name: truck-routing-local
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DJANGO_SECRET_KEY: local-only-not-secret
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:8.6.7-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

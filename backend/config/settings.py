@@ -1,4 +1,5 @@
-"""Django settings. Everything environment-specific is read from env vars (12-factor)."""
+"""Django settings, configured from environment variables."""
+
 import os
 import tempfile
 from pathlib import Path
@@ -33,6 +34,7 @@ MIDDLEWARE = [
     "django.middleware.gzip.GZipMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -73,7 +75,7 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_TZ = True
 
-# Client-forwarded forecasts (see trips/services/weather.py) can be a few hundred KB.
+# browser-forwarded forecasts can be a few hundred KB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 
 STATIC_URL = "static/"
@@ -82,6 +84,16 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 FRONTEND_DIST = BASE_DIR / "frontend_dist"
 WHITENOISE_ROOT = FRONTEND_DIST if FRONTEND_DIST.exists() else None
 WHITENOISE_INDEX_FILE = True
+# browsers won't install the PWA without the right manifest type
+WHITENOISE_MIMETYPES = {".webmanifest": "application/manifest+json"}
+
+
+def whitenoise_headers(headers, path, url):
+    """The SPA is served by WhiteNoise before Django's middleware, so add anti-framing here too."""
+    headers["X-Frame-Options"] = "DENY"
+
+
+WHITENOISE_ADD_HEADERS_FUNCTION = whitenoise_headers
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -96,27 +108,42 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "trips.exceptions.api_exception_handler",
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {"anon": os.environ.get("API_RATE_LIMIT", "120/min")},
+    # Behind a reverse proxy every request comes from the proxy's IP; trusting that many
+    # X-Forwarded-For hops lets the throttle see real clients.
+    "NUM_PROXIES": int(os.environ["TRUSTED_PROXIES"]) if os.environ.get("TRUSTED_PROXIES") else None,
 }
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "31536000"))
 
-# --- Domain / provider configuration -------------------------------------------------
+SILENCED_SYSTEM_CHECKS = [
+    # JSON API without cookies or sessions: nothing for CSRF to protect
+    "security.W003",
+    # the proxy terminates TLS and redirects HTTP; doing it here breaks internal health checks
+    "security.W008",
+    # includeSubDomains/preload affect the whole domain, so they're left to its owner
+    "security.W005",
+    "security.W021",
+]
+
 TRUCK_ROUTING = {
     "OSRM_URL": os.environ.get("OSRM_URL", "https://router.project-osrm.org"),
     "PHOTON_URL": os.environ.get("PHOTON_URL", "https://photon.komoot.io"),
     # Commercial Open-Meteo key is optional; the free endpoint is used without it.
     "OPEN_METEO_API_KEY": os.environ.get("OPEN_METEO_API_KEY", ""),
-    # auto | server | client — where hourly forecasts are fetched (see weather.resolve_forecasts).
+    # auto | server | client: where hourly forecasts are fetched
     "WEATHER_SOURCE": os.environ.get("WEATHER_SOURCE", "auto"),
     "HTTP_TIMEOUT_S": float(os.environ.get("HTTP_TIMEOUT_S", "20")),
     "USER_AGENT": os.environ.get("HTTP_USER_AGENT", "spotter-truck-routing/1.0"),
     # Governed (top) speed of the truck; most fleet trucks are limited to ~65 mph.
     "TRUCK_MAX_SPEED_MPH": float(os.environ.get("TRUCK_MAX_SPEED_MPH", "65")),
-    # Posted speed limits along each route (Valhalla trace_attributes); off → speed cap only.
+    # posted speed limits via Valhalla; when off, only the speed cap applies
     "SPEED_LIMITS_ENABLED": env_bool("SPEED_LIMITS_ENABLED", True),
     "VALHALLA_URL": os.environ.get("VALHALLA_URL", "https://valhalla1.openstreetmap.de"),
+    # the public Valhalla allows ~1 req/s; raise for a self-hosted one
+    "SPEED_LIMITS_PARALLEL": int(os.environ.get("SPEED_LIMITS_PARALLEL", "2")),
     "WEATHER_CACHE_TTL_S": int(os.environ.get("WEATHER_CACHE_TTL_S", "1800")),
     "ROUTE_CACHE_TTL_S": int(os.environ.get("ROUTE_CACHE_TTL_S", "3600")),
 }

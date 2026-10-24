@@ -32,14 +32,14 @@ export interface PlanChange {
   text: string;
 }
 
-const severity = (r: RouteOption) => RISK_ORDER.indexOf(r.max_level); // unknown → -1
+const severity = (r: RouteOption) => RISK_ORDER.indexOf(r.max_level); // unknown = -1
 const severeMiles = (r: RouteOption) => r.miles_by_level.severe + r.miles_by_level.no_travel;
 const best = (p: TripPlan) => p.routes.find((r) => r.id === p.recommended_route)!;
 
-/** Small differences (a few miles) are just re-sampling noise, not a change worth an alert. */
+// a few miles of difference is re-sampling noise, not a change
 const MILES_NOISE = 5;
 
-/** What changed for the driver between two plans of the same trip (re-checked from a new position). */
+/** What changed between two plans of the same trip, for the live-mode banner. */
 export function describeChange(prev: TripPlan, next: TripPlan): PlanChange {
   const a = best(prev);
   const b = best(next);
@@ -48,10 +48,16 @@ export function describeChange(prev: TripPlan, next: TripPlan): PlanChange {
     return { tone: "worse", text: `Weather ahead got worse: now up to ${RISK_LABEL[b.max_level]} on Route ${b.id}.` };
   }
   if (severeMiles(b) > severeMiles(a) + MILES_NOISE) {
-    return { tone: "worse", text: `${Math.round(severeMiles(b))} Severe miles ahead now (was ${Math.round(severeMiles(a))}).` };
+    return {
+      tone: "worse",
+      text: `${Math.round(severeMiles(b))} Severe miles ahead now (was ${Math.round(severeMiles(a))}).`,
+    };
   }
   if (b.miles_by_level.high > a.miles_by_level.high + MILES_NOISE) {
-    return { tone: "worse", text: `${Math.round(b.miles_by_level.high)} High-risk miles ahead now (was ${Math.round(a.miles_by_level.high)}).` };
+    return {
+      tone: "worse",
+      text: `${Math.round(b.miles_by_level.high)} High-risk miles ahead now (was ${Math.round(a.miles_by_level.high)}).`,
+    };
   }
   if (severity(b) < severity(a) || severeMiles(b) + MILES_NOISE < severeMiles(a)) {
     return { tone: "better", text: `Conditions ahead improved: worst is now ${RISK_LABEL[b.max_level]}.` };

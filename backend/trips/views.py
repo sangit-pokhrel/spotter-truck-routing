@@ -1,3 +1,5 @@
+import os
+
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,13 +13,15 @@ from .services.weather import WeatherRequired
 
 
 def weather_required(exc: WeatherRequired) -> Response:
-    """Ask the client to fetch forecasts and repeat the request with them (see weather.py)."""
+    """Ask the client to fetch forecasts and repeat the request with them."""
     return Response({"weather_request": exc.request})
 
 
 class HealthView(APIView):
+    throttle_classes = []  # polled by health checks
+
     def get(self, request):
-        return Response({"status": "ok"})
+        return Response({"status": "ok", "version": os.environ.get("APP_VERSION", "dev")})
 
 
 class GeocodeView(APIView):

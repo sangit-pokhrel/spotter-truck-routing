@@ -1,4 +1,4 @@
-/** Small per-device preferences so a driver doesn't re-enter the same load every trip. */
+/** Per-device preferences such as the usual load. */
 const PREFIX = "trip.";
 
 export function loadPref(key: string, fallback: string): string {

@@ -8,7 +8,7 @@ interface AsyncState<T> {
   error: string | null;
 }
 
-/** Plans a trip; a new request aborts the one in flight so stale results never win. */
+/** Latest request wins: a new plan aborts the one in flight. */
 export function useTripPlan() {
   const [state, setState] = useState<AsyncState<TripPlan>>({ data: null, loading: false, error: null });
   const controller = useRef<AbortController | null>(null);
@@ -27,7 +27,7 @@ export function useTripPlan() {
     }
   }, []);
 
-  /** Show a previously saved plan without touching the network (offline / reopened app). */
+  /** Show a saved plan without a request (offline or reopened app). */
   const restore = useCallback((data: TripPlan) => {
     controller.current?.abort();
     setState({ data, loading: false, error: null });
@@ -37,11 +37,10 @@ export function useTripPlan() {
   return { ...state, plan, restore };
 }
 
-/** Loads the corridor heatmap after a plan arrives (routes render first, heatmap streams in).
- *  `preset` supplies an already-known heatmap for that exact plan (restored from the device). */
+/** `preset` is a heatmap restored from the device for that exact plan. */
 export function useHeatmap(plan: TripPlan | null, preset: { plan: TripPlan; heatmap: Heatmap } | null = null) {
   const [state, setState] = useState<AsyncState<Heatmap>>({ data: null, loading: false, error: null });
-  // The heatmap depends only on the corridor, departure and load, not on ETAs, so a plan that
+  // Doesn't depend on ETAs, so a plan that was only re-timed keeps its heatmap.
   // was merely re-timed (posted speed limits) keeps the heatmap it already has.
   const key = plan
     ? `${plan.departure}|${plan.load_weight_lb}|${plan.corridor.length}|${plan.corridor[0]}|${plan.corridor[plan.corridor.length - 1]}`
@@ -62,7 +61,6 @@ export function useHeatmap(plan: TripPlan | null, preset: { plan: TripPlan; heat
         if (err.name !== "AbortError") setState({ data: null, loading: false, error: err.message });
       });
     return () => ctrl.abort();
-    // Keyed on what the heatmap depends on; `preset` only matters for the restored plan.
   }, [key]);
 
   return state;

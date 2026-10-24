@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** Phones and portrait tablets get the stacked, map-first layout. Keep in sync with styles.css. */
+// stacked, map-first layout; same breakpoint as styles.css
 export const COMPACT_QUERY = "(max-width: 900px)";
 
 export function useMediaQuery(query: string): boolean {

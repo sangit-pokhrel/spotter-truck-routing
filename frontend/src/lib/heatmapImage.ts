@@ -1,8 +1,7 @@
 import type { HeatMetric, Heatmap } from "../api/types";
 import { colorFor } from "./risk";
 
-/** Upscale factor before handing the image to Leaflet: we do the bilinear smoothing
- *  ourselves so it looks identical in every browser. */
+// we upscale with our own bilinear smoothing so it looks the same in every browser
 const UPSCALE = 8;
 
 /** RGBA pixels (one per grid cell) for one forecast hour. Exported for tests. */
@@ -23,7 +22,7 @@ export function framePixels(heatmap: Heatmap, metric: HeatMetric, hour: number):
   return pixels;
 }
 
-/** One PNG data URL per forecast hour, rendered up-front so the slider never waits. */
+/** One PNG per forecast hour, rendered up front so scrubbing never waits. */
 export function renderFrames(heatmap: Heatmap, metric: HeatMetric): string[] {
   const { cols, rows } = heatmap.grid;
   const small = document.createElement("canvas");

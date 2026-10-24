@@ -44,10 +44,20 @@ interface Props {
   onFocus: (f: FocusedCheckpoint | null) => void;
   basemap: BasemapId;
   fitKey: number;
+  /** Route whose summary is open. */
+  expandedId: string | null;
+  onExpand: (id: string | null) => void;
+  /** Summary beside the badge (desktop) rather than in the parent's card (phones). */
+  inlineDetails: boolean;
 }
 
 function pin(label: string, cls: string) {
-  return L.divIcon({ className: `map-pin ${cls}`, html: `<span>${label}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+  return L.divIcon({
+    className: `map-pin ${cls}`,
+    html: `<span>${label}</span>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
 }
 // "O"/"D" rather than A/B so pins aren't confused with Route A/B/C.
 const ORIGIN_ICON = pin("O", "pin-origin");
@@ -59,7 +69,7 @@ const TRUCK_ICON = L.divIcon({
   iconAnchor: [15, 15],
 });
 
-/** Keep Leaflet's cached size in sync when the layout around the map changes (e.g. phone reflow). */
+/** Leaflet caches the map size; re-measure when the layout changes. */
 function ResizeWatcher() {
   const map = useMap();
   useEffect(() => {
@@ -74,7 +84,7 @@ function FitToPlan({ plan, fitKey }: { plan: TripPlan | null; fitKey: number }) 
   const map = useMap();
   useEffect(() => {
     if (!plan) return;
-    map.invalidateSize({ pan: false }); // the container may have just been resized by the new layout
+    map.invalidateSize({ pan: false }); // the new layout may have just resized the map
     const bounds = L.latLngBounds([]);
     plan.routes.forEach((r) => r.segments.forEach((s) => s.coords.forEach((c) => bounds.extend(c))));
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [48, 48] });
@@ -90,7 +100,6 @@ function FlyToFocus({ focused }: { focused: FocusedCheckpoint | null }) {
   return null;
 }
 
-/** Non-selected routes: a single line in the route's identity colour; thickens on hover. */
 const RouteLine = memo(function RouteLine({ route, onSelect }: { route: RouteOption; onSelect: () => void }) {
   const positions = useMemo(() => route.segments.map((s) => s.coords), [route]);
   return (
@@ -106,13 +115,16 @@ const RouteLine = memo(function RouteLine({ route, onSelect }: { route: RouteOpt
   );
 });
 
-/** Selected route: casing in the route's colour, road coloured by checkpoint risk. */
 const SelectedRoute = memo(function SelectedRoute({ route, casing }: { route: RouteOption; casing: string }) {
   const all = useMemo(() => route.segments.map((s) => s.coords), [route]);
   return (
     <>
       <Polyline positions={all} pathOptions={{ color: casing, weight: 11, opacity: 0.9 }} interactive={false} />
-      <Polyline positions={all} pathOptions={{ color: ROUTE_COLORS[route.id], weight: 8, opacity: 1 }} interactive={false} />
+      <Polyline
+        positions={all}
+        pathOptions={{ color: ROUTE_COLORS[route.id], weight: 8, opacity: 1 }}
+        interactive={false}
+      />
       {route.segments.map((seg, i) => (
         <Polyline
           key={i}
@@ -162,39 +174,69 @@ const Checkpoints = memo(function Checkpoints({
   );
 });
 
-/** Route summary on the map itself: time, distance and Severe+ miles at a point on the line. */
+/** A/B/C badges: tapping one selects the route and shows its summary. */
 const RouteLabels = memo(function RouteLabels({
   plan,
   selectedId,
   onSelect,
+  expandedId,
+  onExpand,
+  inlineDetails,
 }: {
   plan: TripPlan;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  expandedId: string | null;
+  onExpand: (id: string | null) => void;
+  inlineDetails: boolean;
 }) {
-  const labels = useMemo(
+  const positions = useMemo(
     () =>
-      plan.routes.map((r, i) => {
-        const at = pointAtMile(r, routePath(r), r.distance_mi * LABEL_POSITIONS[i % LABEL_POSITIONS.length]);
-        const severe = r.miles_by_level.severe + r.miles_by_level.no_travel;
-        const best = r.id === plan.recommended_route;
-        const html =
-          `<span class="rl${best ? " rl-best" : ""}" style="--c:${ROUTE_COLORS[r.id]}">` +
-          `<b>${r.id}</b><span>${formatDuration(r.duration_h)}</span><i></i><span>${formatMiles(r.distance_mi)}</span><i></i>` +
-          `<span class="${severe > 0 ? "rl-bad" : ""}">${formatMiles(severe)} severe</span>${best ? "<em>Best</em>" : ""}</span>`;
-        return { id: r.id, at, icon: L.divIcon({ className: "rl-icon", html, iconSize: [0, 0] }) };
-      }),
+      Object.fromEntries(
+        plan.routes.map((r, i) => [
+          r.id,
+          pointAtMile(r, routePath(r), r.distance_mi * LABEL_POSITIONS[i % LABEL_POSITIONS.length]),
+        ]),
+      ),
     [plan],
   );
+
+  const icons = useMemo(
+    () =>
+      Object.fromEntries(
+        plan.routes.map((r) => {
+          const severe = r.miles_by_level.severe + r.miles_by_level.no_travel;
+          const best = r.id === plan.recommended_route;
+          const classes = ["rl", best && "rl-best", r.id === selectedId && "rl-selected", severe > 0 && "rl-warn"]
+            .filter(Boolean)
+            .join(" ");
+          const details =
+            r.id === expandedId && inlineDetails
+              ? `<span class="rl-details"><span>${formatDuration(r.duration_h)}</span><i></i><span>${formatMiles(r.distance_mi)}</span><i></i>` +
+                `<span class="${severe > 0 ? "rl-bad" : ""}">${formatMiles(severe)} severe</span>${best ? "<em>Best</em>" : ""}</span>`
+              : "";
+          const title = `Route ${r.id}${best ? " (recommended)" : ""}: tap for details`;
+          const html = `<span class="${classes}" style="--c:${ROUTE_COLORS[r.id]}" title="${title}"><b>${r.id}</b>${details}</span>`;
+          return [r.id, L.divIcon({ className: "rl-icon", html, iconSize: [0, 0] })];
+        }),
+      ),
+    [plan, selectedId, expandedId, inlineDetails],
+  );
+
   return (
     <>
-      {labels.map((l) => (
+      {plan.routes.map((r) => (
         <Marker
-          key={l.id}
-          position={l.at}
-          icon={l.icon}
-          zIndexOffset={l.id === selectedId ? 900 : 800}
-          eventHandlers={{ click: () => onSelect(l.id) }}
+          key={r.id}
+          position={positions[r.id]}
+          icon={icons[r.id]}
+          zIndexOffset={r.id === expandedId ? 1000 : r.id === selectedId ? 900 : 800}
+          eventHandlers={{
+            click: () => {
+              onSelect(r.id);
+              onExpand(expandedId === r.id ? null : r.id);
+            },
+          }}
           keyboard={false}
         />
       ))}
@@ -202,7 +244,21 @@ const RouteLabels = memo(function RouteLabels({
   );
 });
 
-export function MapView({ plan, selectedId, onSelectRoute, heat, truck, hoverPoint, focused, onFocus, basemap, fitKey }: Props) {
+export function MapView({
+  plan,
+  selectedId,
+  onSelectRoute,
+  heat,
+  truck,
+  hoverPoint,
+  focused,
+  onFocus,
+  basemap,
+  fitKey,
+  expandedId,
+  onExpand,
+  inlineDetails,
+}: Props) {
   const selected = plan?.routes.find((r) => r.id === selectedId) ?? null;
   const others = plan?.routes.filter((r) => r.id !== selectedId) ?? [];
   const tiles = BASEMAPS[basemap];
@@ -229,9 +285,20 @@ export function MapView({ plan, selectedId, onSelectRoute, heat, truck, hoverPoi
 
       {plan && (
         <>
-          <RouteLabels plan={plan} selectedId={selectedId} onSelect={onSelectRoute} />
+          <RouteLabels
+            plan={plan}
+            selectedId={selectedId}
+            onSelect={onSelectRoute}
+            expandedId={expandedId}
+            onExpand={onExpand}
+            inlineDetails={inlineDetails}
+          />
           <Marker position={[plan.origin.lat, plan.origin.lon]} icon={ORIGIN_ICON} title={plan.origin.label} />
-          <Marker position={[plan.destination.lat, plan.destination.lon]} icon={DEST_ICON} title={plan.destination.label} />
+          <Marker
+            position={[plan.destination.lat, plan.destination.lon]}
+            icon={DEST_ICON}
+            title={plan.destination.label}
+          />
         </>
       )}
       {hoverPoint && (

@@ -1,16 +1,15 @@
-"""Hourly forecasts from Open-Meteo (no API key needed).
+"""Hourly forecasts from Open-Meteo.
 
-* Locations are snapped to a 0.05° grid (~5 km, about the resolution of the forecast models)
-  so nearby checkpoints across routes share one lookup and one cache entry.
-* Many locations are fetched per HTTP call, and batches run in parallel.
-* Precipitation values are the total for the preceding hour, i.e. already a per-hour rate.
+Points are snapped to a 0.05 degree grid (about the model resolution) so nearby checkpoints share
+a lookup. Precipitation values are hourly totals, i.e. already in/hr.
 """
+
 from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from django.conf import settings
 from django.core.cache import cache
@@ -35,7 +34,7 @@ def snap(point: LatLon) -> LatLon:
 
 
 def floor_hour(dt: datetime) -> datetime:
-    return dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    return dt.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
 
 
 @dataclass
@@ -84,7 +83,7 @@ def _parse(item: dict, start: datetime) -> Forecast:
 def _window(start: datetime, end: datetime) -> tuple[datetime, datetime] | None:
     """Whole-hour UTC window covering [start, end], clipped to the forecast horizon."""
     start = floor_hour(start)
-    horizon = floor_hour(datetime.now(timezone.utc)).replace(hour=23) + timedelta(days=FORECAST_HORIZON_DAYS)
+    horizon = floor_hour(datetime.now(UTC)).replace(hour=23) + timedelta(days=FORECAST_HORIZON_DAYS)
     end = min(floor_hour(end) + timedelta(hours=1), horizon)
     return None if end < start else (start, end)
 
@@ -148,11 +147,8 @@ def get_forecasts(points: list[LatLon], start: datetime, end: datetime) -> dict[
     return found
 
 
-# --- Client-assisted fetching ------------------------------------------------------------
-# Open-Meteo's free tier limits requests per IP, and shared cloud egress IPs (e.g. Render's
-# free tier) hit that limit. In that case the API asks the browser to fetch the exact same
-# query with its own IP/quota and post the raw hourly data back. All parsing, risk rules and
-# ranking still run here; the browser is only a transport.
+# Open-Meteo limits free requests per IP, and shared cloud IPs run out. When that happens the
+# API hands the browser the query to run and post back; parsing and scoring still happen here.
 
 SERVER_LIMITED_KEY = "wx:server-rate-limited"
 SERVER_LIMITED_TTL_S = 600
@@ -181,19 +177,15 @@ def client_request(points: list[LatLon], start: datetime, end: datetime) -> dict
 def from_client(payload: dict) -> dict[LatLon, Forecast]:
     """Parse forecasts the browser fetched (validated by the serializer)."""
     start = payload["start_hour"]
-    return {
-        snap((lat, lon)): _parse(item, start)
-        for (lat, lon), item in zip(payload["locations"], payload["items"])
-    }
+    return {snap((lat, lon)): _parse(item, start) for (lat, lon), item in zip(payload["locations"], payload["items"])}
 
 
 def resolve_forecasts(
     points: list[LatLon], start: datetime, end: datetime, supplied: dict | None = None
 ) -> dict[LatLon, Forecast]:
-    """Forecasts from the client payload, else the server fetch, else ask the client.
+    """Forecasts from the browser's payload, the server fetch, or a request for the browser to fetch.
 
-    WEATHER_SOURCE: "auto" (server, falling back to client while rate-limited),
-    "server" (never ask the client) or "client" (always ask the client).
+    WEATHER_SOURCE: "auto" (server, browser while rate-limited), "server" or "client".
     """
     if supplied is not None:
         return from_client(supplied)

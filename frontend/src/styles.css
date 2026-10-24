@@ -1,6 +1,3 @@
-/* ------------------------------------------------------------------------------------
-   Dispatch-console styling: hairlines over cards, tabular numbers, one brand accent.
-   ------------------------------------------------------------------------------------ */
 :root {
   --ink: #15191f;
   --ink-2: #4b5462;
@@ -65,7 +62,7 @@ input {
   flex: none;
 }
 
-/* ---------- Shell ---------- */
+/* Shell */
 .app {
   display: flex;
   flex-direction: column;
@@ -187,9 +184,7 @@ input {
   background: #262a30;
 }
 
-
-
-/* ---------- Form ---------- */
+/* Form */
 .trip-form {
   display: flex;
   flex-direction: column;
@@ -465,7 +460,7 @@ input {
   margin-top: 6px;
 }
 
-/* ---------- Recommendation ---------- */
+/* Recommendation */
 .verdict {
   padding: 2px 0 2px 12px;
   border-left: 3px solid var(--brand);
@@ -496,7 +491,7 @@ input {
   font-size: 12px;
 }
 
-/* ---------- Route comparison ---------- */
+/* Route comparison */
 .compare-wrap {
   overflow-x: auto;
 }
@@ -620,7 +615,7 @@ input {
   min-width: 2px;
 }
 
-/* ---------- Checkpoint table ---------- */
+/* Checkpoint table */
 .cp-wrap {
   max-height: 340px;
   overflow-y: auto;
@@ -689,7 +684,7 @@ input {
   border-radius: 2px;
 }
 
-/* ---------- Map chrome ---------- */
+/* Map chrome */
 .map-toolbar {
   position: absolute;
   top: 10px;
@@ -773,7 +768,7 @@ input {
   color: var(--ink-2);
 }
 
-/* ---------- Dock (route profile + forecast) ---------- */
+/* Dock (route profile + forecast) */
 .dock {
   flex: none;
   background: var(--panel);
@@ -1026,7 +1021,7 @@ input {
   color: var(--ink-3);
 }
 
-/* ---------- Leaflet bits ---------- */
+/* Leaflet bits */
 .leaflet-container {
   font-family: var(--sans);
 }
@@ -1071,46 +1066,88 @@ input {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
-/* Route labels on the map */
+/* Route badges on the map: a compact letter, details beside it when tapped */
 .rl-icon {
   overflow: visible;
 }
 
 .rl {
   position: absolute;
-  transform: translate(-50%, -50%);
+  transform: translate(-13px, -50%);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 7px 3px 3px;
+  padding: 2px;
   background: #fff;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--c);
-  border-radius: 3px;
-  box-shadow: 0 1px 4px rgba(21, 25, 31, 0.2);
-  font-size: 11.5px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(21, 25, 31, 0.35);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .rl b {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
   background: var(--c);
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-.rl span {
+/* Recommended route: a small star on the badge */
+.rl-best b::after {
+  content: "★";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 8px;
+  line-height: 13px;
+  text-align: center;
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+/* Severe miles on this route: red dot */
+.rl-warn b::before {
+  content: "";
+  position: absolute;
+  bottom: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #cc3329;
+  box-shadow: 0 0 0 1.5px #fff;
+}
+
+.rl-selected {
+  box-shadow:
+    0 0 0 2px var(--c),
+    0 1px 4px rgba(21, 25, 31, 0.35);
+}
+
+.rl-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+  font-size: 11.5px;
+}
+
+.rl-details span {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--ink-2);
 }
 
-.rl i {
+.rl-details i {
   width: 1px;
   height: 10px;
   background: var(--line);
@@ -1129,6 +1166,17 @@ input {
   border-radius: 2px;
   background: var(--brand);
   color: #fff;
+}
+
+@media (pointer: coarse) {
+  .rl b {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+  }
+  .rl {
+    transform: translate(-17px, -50%);
+  }
 }
 
 .cp-tip {
@@ -1186,15 +1234,7 @@ input {
   color: #7d1913;
 }
 
-@media (max-width: 600px) {
-  /* Keep route labels to letter + time on phones */
-  .rl i,
-  .rl span:not(:first-of-type) {
-    display: none;
-  }
-}
-
-/* ---------- Form extras: location, quick departures, summary ---------- */
+/* Form extras: location, quick departures, summary */
 .has-action input[type="text"] {
   padding-right: 112px !important;
 }
@@ -1346,7 +1386,7 @@ details[open] > summary.section-title {
   margin-bottom: 12px;
 }
 
-/* ---------- Tablet landscape: narrower panel ---------- */
+/* Tablet landscape: narrower panel */
 @media (max-width: 1200px) and (min-width: 901px) {
   .workspace {
     grid-template-columns: 360px 1fr;
@@ -1356,7 +1396,7 @@ details[open] > summary.section-title {
   }
 }
 
-/* ---------- Phones & portrait tablets: one column, map first once planned ---------- */
+/* Phones & portrait tablets: one column, map first once planned */
 @media (max-width: 900px) {
   .app {
     height: auto;
@@ -1374,7 +1414,7 @@ details[open] > summary.section-title {
     display: flex;
     flex-direction: column;
   }
-  /* Let the panel's sections and the map stage be ordered as siblings. */
+  /* let panel sections and the map be reordered as siblings */
   .panel {
     display: contents;
   }
@@ -1385,7 +1425,7 @@ details[open] > summary.section-title {
   .stage {
     display: contents;
   }
-  /* Answer first: trip → recommendation → map → forecast (so scrubbing shows the map) → comparison → checkpoints. */
+  /* recommendation first, forecast right under the map so scrubbing keeps it in view */
   .s-trip {
     order: 1;
   }
@@ -1408,7 +1448,7 @@ details[open] > summary.section-title {
   .s-intro {
     order: 7;
   }
-  /* Before a plan exists the form comes first and the map is a preview. */
+  /* before planning, the map is just a preview */
   .workspace:not(.has-plan) .map-wrap {
     height: 38vh;
     min-height: 240px;
@@ -1433,13 +1473,13 @@ details[open] > summary.section-title {
   }
 }
 
-/* ---------- Touch devices: finger-sized targets ---------- */
+/* Touch devices: finger-sized targets */
 @media (pointer: coarse) {
   .field input[type="text"],
   .field input[type="number"],
   .field input[type="datetime-local"] {
     height: 46px;
-    font-size: 16px; /* 16px stops iOS zooming into the field */
+    font-size: 16px; /* iOS zooms into inputs under 16px */
   }
   .input-unit input {
     font-size: 16px !important;
@@ -1518,7 +1558,7 @@ details[open] > summary.section-title {
   }
 }
 
-/* ---------- Live updates ---------- */
+/* Live updates */
 .live {
   margin-top: 12px;
   padding-top: 12px;
@@ -1636,7 +1676,7 @@ details[open] > summary.section-title {
   }
 }
 
-/* ---------- PWA: install, offline/saved banners, pop-out ---------- */
+/* PWA: install, offline/saved banners, pop-out */
 .install-btn {
   height: 28px;
   padding: 0 10px;
@@ -1728,4 +1768,66 @@ details[open] > summary.section-title {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+/* Tapped route summary on phones (bottom of the map) */
+.route-card {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 30px;
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 10px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(21, 25, 31, 0.25);
+}
+
+.route-card-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+}
+
+.route-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.route-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.route-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.route-card-close {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--canvas);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-2);
+  cursor: pointer;
 }

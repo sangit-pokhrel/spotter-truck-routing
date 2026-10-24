@@ -1,10 +1,9 @@
-"""Route ranking (pure functions).
+"""Route ranking.
 
-Spec order: fewest Severe miles → fewest High miles → lowest average risk → shortest time.
-No Travel is strictly worse than Severe but the spec doesn't rank it, so we put
-"fewest No Travel miles" in front: a route you legally/safely can't drive must never win
-just because it has fewer Severe miles.
+Same order as the spec (Severe miles, High miles, average risk, travel time), with No Travel
+miles compared first so an undrivable route can't win on having fewer Severe miles.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,7 +19,7 @@ class RouteStats:
     duration_h: float
 
     def rank_key(self) -> tuple[float, ...]:
-        # Rounded so float noise (e.g. 0.0001 mi) never outranks a real difference further down.
+        # Rounded so float noise can't outrank a real difference in a later criterion.
         return (
             round(self.no_travel_miles, 1),
             round(self.severe_miles, 1),

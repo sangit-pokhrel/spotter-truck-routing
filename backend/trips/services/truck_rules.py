@@ -1,17 +1,10 @@
-"""State truck speed limits (lower than the posted car limit).
+"""State truck speed limits set by statute (rarely tagged per road in OpenStreetMap).
 
-Several US states set a lower maximum speed for heavy trucks than the posted limit, statewide,
-by statute. OpenStreetMap rarely tags these on individual roads (`maxspeed:hgv`), so posted
-limits alone miss them. We apply them by working out which state each road segment is in.
-
-Only states whose truck limit can bind at a typical governed speed (≤ 65 mph) are listed. The
-table is data, not logic: verify it against current statutes before relying on it, and extend
-it as needed. Every rule assumes a loaded tractor-trailer, whose gross weight is above each
-state's threshold even when empty.
-
-Boundaries: US Census Bureau 2010 cartographic boundaries (1:20M, public domain), simplified to
-~1 km. A segment within ~1–2 km of a state line can be assigned to the neighbour.
+Only states whose truck limit is below a typical 65 mph governed speed are listed; check the table
+against current law before relying on it. Rules assume a loaded tractor-trailer.
+Boundaries: US Census 2010 (1:20M), simplified to ~1 km.
 """
+
 from __future__ import annotations
 
 import json
@@ -34,7 +27,9 @@ TRUCK_RULES: dict[str, TruckRule] = {
     r.state: r
     for r in (
         TruckRule("CA", 55, "California Vehicle Code §22406", "3+ axle trucks and any vehicle towing"),
-        TruckRule("OR", 55, "ORS 811.111", "trucks > 10,000 lb; some I-84 sections allow 60–65 (not modelled: conservative)"),
+        TruckRule(
+            "OR", 55, "ORS 811.111", "trucks > 10,000 lb; some I-84 sections allow 60–65 (not modelled: conservative)"
+        ),
         TruckRule("WA", 60, "RCW 46.61.410", "vehicles > 10,000 lb and vehicles towing"),
         TruckRule("MI", 65, "MCL 257.627", "trucks on freeways posted 70–75"),
         TruckRule("IN", 65, "IC 9-21-5-2", "trucks > 26,000 lb on interstates"),

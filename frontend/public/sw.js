@@ -1,10 +1,10 @@
-/* Service worker: offline app shell, cached map tiles, and route-risk notifications.
+/* Service worker: offline app shell, cached map tiles and alert clicks.
  *
- * Caching strategy
- *   page (navigation)      network first, fall back to the cached shell when offline
- *   /assets/* (hashed)     cache first: file names change whenever content changes
- *   map tiles, fonts       cache first / stale-while-revalidate, tiles capped at MAX_TILES
- *   /api/*                 never cached here: the app saves the last trip itself
+ *   page            network first, cached shell when offline
+ *   /assets/*       cache first (hashed file names)
+ *   map tiles       cache first, capped at MAX_TILES
+ *   fonts           stale-while-revalidate
+ *   /api/*          not cached here; the app saves the last trip itself
  */
 const VERSION = "v1";
 const SHELL = `shell-${VERSION}`;
@@ -16,7 +16,12 @@ const MAX_TILES = 800;
 const SHELL_URLS = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/favicon-32.png"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_URLS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(SHELL)
+      .then((c) => c.addAll(SHELL_URLS))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -28,8 +33,8 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// The first visit loads before this worker controls the page; the page sends us the asset
-// URLs it already loaded so the app works offline from the very first visit.
+// The first visit loads before this worker is in control, so the page sends the asset URLs
+// it already loaded.
 self.addEventListener("message", (event) => {
   if (event.data?.type === "cache-urls") {
     event.waitUntil(caches.open(ASSETS).then((c) => c.addAll(event.data.urls).catch(() => {})));

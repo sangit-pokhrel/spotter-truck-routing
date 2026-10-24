@@ -1,4 +1,5 @@
-"""Best-effort cache backend: a cache problem must never fail a request."""
+"""Cache backend that never fails a request."""
+
 import logging
 
 from django.core.cache.backends.filebased import FileBasedCache
@@ -7,10 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 class ResilientFileBasedCache(FileBasedCache):
-    """FileBasedCache that treats I/O errors as cache misses.
+    """FileBasedCache that treats I/O errors as misses.
 
-    Concurrent writers can lose the rename race (PermissionError on Windows), and a full or
-    read-only disk raises OSError too. Neither should turn a forecast lookup into a 500.
+    Concurrent writers can lose the rename race (PermissionError on Windows), and full or
+    read-only disks raise OSError; neither should turn a lookup into a 500.
     """
 
     def get(self, key, default=None, version=None):

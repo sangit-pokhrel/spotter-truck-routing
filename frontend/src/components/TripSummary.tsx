@@ -3,7 +3,6 @@ import { formatEta } from "../lib/format";
 
 const short = (label: string) => label.split(",")[0];
 
-/** One-line recap shown once a plan exists, so the map gets the screen on phones. */
 export function TripSummary({ plan, onEdit }: { plan: TripPlan; onEdit: () => void }) {
   return (
     <div className="trip-summary">

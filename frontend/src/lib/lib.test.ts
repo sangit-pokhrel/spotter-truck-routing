@@ -41,7 +41,16 @@ describe("framePixels", () => {
 describe("truckPosition", () => {
   const route = {
     distance_mi: 138,
-    segments: [{ level: "low", coords: [[40, -100], [41, -100], [42, -100]] }],
+    segments: [
+      {
+        level: "low",
+        coords: [
+          [40, -100],
+          [41, -100],
+          [42, -100],
+        ],
+      },
+    ],
     checkpoints: [
       { mile: 0, hours_from_departure: 0 },
       { mile: 69, hours_from_departure: 1 },
