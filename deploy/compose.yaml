@@ -45,7 +45,7 @@ services:
   # Bundled HTTPS: only for servers where ports 80 and 443 are free (Let's Encrypt needs them).
   caddy:
     profiles: ["https"]
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.8-alpine
     restart: unless-stopped
     ports:
       - "80:80"
