@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Django API + built SPA in one image
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # set by CI
 ARG VERSION=dev
