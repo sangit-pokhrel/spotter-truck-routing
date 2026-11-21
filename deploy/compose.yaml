@@ -82,7 +82,7 @@ services:
   # Needs roughly 2 GB RAM for a single state, 8+ GB for a large region; see README.
   valhalla:
     profiles: ["valhalla"]
-    image: ghcr.io/valhalla/valhalla-scripted:3.9.1
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.3
     restart: unless-stopped
     environment:
       tile_urls: ${VALHALLA_PBF_URLS:-https://download.geofabrik.de/north-america/us/colorado-latest.osm.pbf}
